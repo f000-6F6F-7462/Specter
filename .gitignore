@@ -1,0 +1,25 @@
+# Dependencies
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Tools
+coverage/
+.pytest_cache/
+.mypy_cache/
