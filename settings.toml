@@ -1,0 +1,40 @@
+# Non-secret defaults, layered under environment variables and .env.
+# Secrets belong in .env / the environment, never here.
+
+env = "local"
+bus = "redis"
+blob = "minio"
+
+[log]
+level = "INFO"
+json = false
+
+[redis]
+url = "redis://localhost:6379/0"
+stream_maxlen = 100000
+consumer_group = "specter"
+
+[database]
+url = "postgresql+asyncpg://specter:specter@localhost:5432/specter"
+
+[qdrant]
+url = "http://localhost:6333"
+
+[s3]
+endpoint_url = "http://localhost:9000"
+bucket = "specter"
+region = "us-east-1"
+secure = false
+
+[models.detector]
+impl = "yolo"
+weights = "yolo11m.pt"
+device = "mps"
+max_batch = 16
+max_delay_ms = 8.0
+
+[models.embedders.face]
+impl = "insightface"
+name = "buffalo_l"
+max_batch = 16
+max_delay_ms = 8.0
