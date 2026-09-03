@@ -1,0 +1,110 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "specter"
+version = "0.1.0"
+description = "Specter Vision Engine — real-time object & face detection core engine"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "numpy>=2.5.2",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
+    "sqlalchemy[asyncio]>=2.0.52",
+    "alembic>=1.19.1",
+    "asyncpg>=0.31.0",
+    "python-multipart>=0.0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "coverage[toml]>=7.16.0",
+    "black>=26.5.1",
+    "isort>=9.0.1",
+    "pylint>=4.0.8",
+    "mypy>=2.3.1",
+    "httpx>=0.28.1",
+    "aiosqlite>=0.22.1",
+]
+
+# Entry points.
+[project.scripts]
+specter = "specter.entrypoints.cli:main"
+specter-api = "specter.entrypoints.http.asgi:main"
+specter-ingest = "specter.application.pipeline.supervisor:main"
+specter-enroll = "specter.entrypoints.workers.enroll_worker:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/specter"]
+
+[tool.black]
+line-length = 100
+target-version = ["py314"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+src_paths = ["src", "tests"]
+known_first_party = ["specter"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+warn_redundant_casts = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_any_generics = false
+warn_return_any = false
+warn_unused_ignores = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra -q --strict-markers"
+
+[tool.coverage.run]
+source = ["src/specter"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "\\.\\.\\.", "raise NotImplementedError"]
+
+[tool.pylint.main]
+py-version = "3.14"
+jobs = 0
+persistent = false
+source-roots = ["src"]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.design]
+max-locals = 20
+
+[tool.pylint."messages control"]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-few-public-methods",
+    "duplicate-code",
+    "too-many-instance-attributes",
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "fixme",  # TODO / phase-marker comments are intentional
+]
