@@ -1,6 +1,8 @@
 """Time as an injected dependency.
 
-`now()` returns monotonic seconds and is what decision logic (cooldowns, staleness)
+``now()`` is monotonic seconds — what decision logic (cooldowns, staleness) must read,
+never ``time.monotonic()`` directly, so tests can freeze it. ``wall()`` is an aware UTC
+datetime for timestamps that leave the process.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -16,8 +18,6 @@ class Clock(Protocol):
 
 
 class SystemClock:
-    __slots__ = ()
-
     def now(self) -> float:
         return monotonic()
 
@@ -26,9 +26,7 @@ class SystemClock:
 
 
 class FrozenClock:
-    """Deterministic test double. `advance()` moves monotonic and wall time together."""
-
-    __slots__ = ("_mono", "_wall")
+    """Deterministic test double. ``advance()`` moves monotonic and wall time together."""
 
     def __init__(self, *, mono: float = 1_000.0, wall: datetime | None = None) -> None:
         self._mono = mono

@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from specter.core.errors import RuleViolation
 from specter.domain.vision import BBox
-from specter.platform.errors import RuleViolation
 
 
 class Disposition(StrEnum):
@@ -71,12 +71,17 @@ class Alert:
     calibrated_confidence: float | None = None
     evidence: MatchEvidence = MatchEvidence()
     disposition: Disposition = Disposition.UNREVIEWED
+    acknowledged: bool = False
     note: str | None = None
+
+    def acknowledge(self) -> None:
+        self.acknowledged = True
 
     def resolve(self, disposition: Disposition, note: str | None = None) -> None:
         if disposition is Disposition.UNREVIEWED:
             raise RuleViolation("cannot resolve an alert back to 'unreviewed'")
         self.disposition = disposition
+        self.acknowledged = True
         self.note = note
 
     @classmethod

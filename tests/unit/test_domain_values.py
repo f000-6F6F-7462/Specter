@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from specter.core.errors import RuleViolation
 from specter.domain.alerts import Alert, Disposition, MatchEvidence
 from specter.domain.streams import (
     RegionOfInterest,
@@ -11,7 +12,6 @@ from specter.domain.streams import (
     StreamSource,
 )
 from specter.domain.vision import BBox
-from specter.platform.errors import RuleViolation
 
 
 class TestBBox:

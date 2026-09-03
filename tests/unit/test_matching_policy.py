@@ -2,13 +2,13 @@ from collections.abc import Sequence
 
 import pytest
 
+from specter.core.errors import RuleViolation
 from specter.domain.matching import (
     MatchPolicy,
     NofMPolicy,
     SimpleThresholdPolicy,
     TrackMatchState,
 )
-from specter.platform.errors import RuleViolation
 from tests.conftest import make_candidate
 
 

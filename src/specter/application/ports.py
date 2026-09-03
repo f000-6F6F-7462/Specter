@@ -1,11 +1,9 @@
-"""The seam catalog.
-
-Every boundary the domain/application talks to is a ``Protocol`` here. Infrastructure
-implements them; the composition root wires concrete adapters. Nothing in this module
-imports a driver (redis, sqlalchemy, qdrant, gi, torch).
+"""
+Application Protocols.
 """
 
 from collections.abc import AsyncIterator, Callable, Sequence
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from specter.contracts import BrokerMessage
@@ -140,6 +138,10 @@ class TargetRepo(Protocol):
         self, watchlist_id: str, *, status: EnrollmentStatus | None = None
     ) -> list[Target]: ...
 
+    async def list_by_batch(self, batch_id: str) -> list[Target]: ...
+
+    async def count_for_watchlist(self, watchlist_id: str) -> int: ...
+
     async def add(self, target: Target) -> None: ...
 
     async def update(self, target: Target) -> None: ...
@@ -173,13 +175,16 @@ class AlertRepo(Protocol):
         owner_id: str,
         *,
         stream_id: str | None = None,
+        watchlist_id: str | None = None,
+        disposition: Disposition | None = None,
+        min_confidence: float | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
         limit: int = 50,
         cursor: str | None = None,
     ) -> list[Alert]: ...
 
-    async def set_disposition(
-        self, alert_id: str, disposition: Disposition, note: str | None
-    ) -> None: ...
+    async def update(self, alert: Alert) -> None: ...
 
 
 #  unit of work
@@ -194,7 +199,12 @@ class UnitOfWork(Protocol):
 
     async def __aenter__(self) -> "UnitOfWork": ...
 
-    async def __aexit__(self, *exc: object) -> None: ...
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None: ...
 
     async def commit(self) -> None: ...
 

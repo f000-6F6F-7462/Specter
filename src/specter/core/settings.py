@@ -10,12 +10,8 @@ from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
+    TomlConfigSettingsSource,
 )
-
-try:
-    from pydantic_settings import TomlConfigSettingsSource
-except ImportError:  # pragma: no cover - older pydantic-settings without a TOML source
-    TomlConfigSettingsSource = None  # type: ignore[assignment, misc]
 
 
 class LogSettings(BaseModel):
@@ -105,12 +101,10 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources: list[PydanticBaseSettingsSource] = [
+        return (
             init_settings,
             env_settings,
             dotenv_settings,
-        ]
-        if TomlConfigSettingsSource is not None:
-            sources.append(TomlConfigSettingsSource(settings_cls))
-        sources.append(file_secret_settings)
-        return tuple(sources)
+            TomlConfigSettingsSource(settings_cls),
+            file_secret_settings,
+        )

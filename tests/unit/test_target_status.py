@@ -1,7 +1,7 @@
 import pytest
 
+from specter.core.errors import RuleViolation
 from specter.domain.catalog import EnrollmentStatus, ImageStatus
-from specter.platform.errors import RuleViolation
 from tests.conftest import make_target
 
 E, R, P = ImageStatus.EMBEDDED, ImageStatus.REJECTED, ImageStatus.PENDING

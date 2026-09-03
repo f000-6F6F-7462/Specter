@@ -13,6 +13,7 @@ from specter.contracts import (
     MatchInfo,
     StreamRef,
 )
+from specter.core.clock import FrozenClock
 from specter.domain.catalog import (
     ImageStatus,
     ReferenceImage,
@@ -23,7 +24,6 @@ from specter.domain.catalog import (
 )
 from specter.domain.matching import Candidate, TrackMatchState
 from specter.domain.vision import BBox
-from specter.platform.clock import FrozenClock
 
 
 @pytest.fixture

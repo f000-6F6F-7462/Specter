@@ -4,9 +4,9 @@ from datetime import UTC
 
 import pytest
 
-from specter.platform.clock import FrozenClock, SystemClock
-from specter.platform.ids import new_id
-from specter.platform.settings import Settings
+from specter.core.clock import FrozenClock, SystemClock
+from specter.core.ids import new_id
+from specter.core.settings import Settings
 
 ID_RE = re.compile(r"^tgt_[0-9a-f]{32}$")
 

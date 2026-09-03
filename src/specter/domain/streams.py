@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
-from specter.platform.errors import RuleViolation
+from specter.core.errors import RuleViolation
 
 
 class StreamProtocol(StrEnum):

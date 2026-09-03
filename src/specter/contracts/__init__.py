@@ -1,5 +1,4 @@
-"""Wire contracts for the Redis Streams.
-"""
+"""Wire contracts for the Redis Streams."""
 
 from specter.contracts.messages import (
     MESSAGE_MODELS,

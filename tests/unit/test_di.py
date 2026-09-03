@@ -2,9 +2,9 @@ import logging
 
 import pytest
 
-from specter.platform.clock import Clock
-from specter.platform.di import Container, build_container
-from specter.platform.settings import Settings
+from specter.core.clock import Clock
+from specter.core.di import Container, build_container
+from specter.core.settings import Settings
 
 
 def test_build_container_wires_settings_and_clock(

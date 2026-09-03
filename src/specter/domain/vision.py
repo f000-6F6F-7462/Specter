@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from specter.platform.errors import RuleViolation
+from specter.core.errors import RuleViolation
 
 type Vector = np.ndarray
 

@@ -3,8 +3,20 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from specter.core.errors import RuleViolation
 from specter.domain.quality import QualityReport, RejectionReason
-from specter.platform.errors import RuleViolation
+
+
+def _require_text(value: str, field_name: str) -> str:
+    if not value.strip():
+        raise RuleViolation(f"{field_name} must not be empty")
+    return value
+
+
+def _require_unit_interval(value: float, field_name: str) -> float:
+    if not 0.0 <= value <= 1.0:
+        raise RuleViolation(f"{field_name} out of range: {value}")
+    return value
 
 
 class TargetType(StrEnum):
@@ -59,10 +71,21 @@ class Target:
     images: list[ReferenceImage] = field(default_factory=list)
     enabled: bool = True
     metadata: dict[str, object] = field(default_factory=dict)
+    batch_id: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.label.strip():
-            raise RuleViolation("target label must not be empty")
+        _require_text(self.label, "target label")
+
+    def rename(self, label: str) -> None:
+        self.label = _require_text(label, "target label")
+
+    def image(self, image_id: str) -> ReferenceImage | None:
+        return next((i for i in self.images if i.id == image_id), None)
+
+    def remove_image(self, image_id: str) -> bool:
+        before = len(self.images)
+        self.images = [i for i in self.images if i.id != image_id]
+        return len(self.images) != before
 
     @property
     def status(self) -> EnrollmentStatus:
@@ -90,7 +113,11 @@ class Watchlist:
     match_threshold: float = 0.78
 
     def __post_init__(self) -> None:
-        if not self.name.strip():
-            raise RuleViolation("watchlist name must not be empty")
-        if not 0.0 <= self.match_threshold <= 1.0:
-            raise RuleViolation(f"match_threshold out of range: {self.match_threshold}")
+        _require_text(self.name, "watchlist name")
+        _require_unit_interval(self.match_threshold, "match_threshold")
+
+    def rename(self, name: str) -> None:
+        self.name = _require_text(name, "watchlist name")
+
+    def set_threshold(self, value: float) -> None:
+        self.match_threshold = _require_unit_interval(value, "match_threshold")

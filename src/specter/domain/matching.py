@@ -1,4 +1,4 @@
-"""The match-decision core — pure functions over per-track state.
+"""The matching core.
 
 A ``MatchPolicy`` folds each new similarity into ``TrackMatchState`` (mutated in
 place) and returns a ``MatchDecision``. ``now`` is monotonic seconds supplied by the
@@ -9,7 +9,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from specter.platform.errors import RuleViolation
+from specter.core.errors import RuleViolation
 
 
 @dataclass(frozen=True, slots=True)

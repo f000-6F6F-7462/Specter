@@ -1,2 +1,1 @@
-"""Application layer: use cases, orchestration, and the port Protocols.
-"""
+"""Application layer: use cases, orchestration, and the port Protocols."""
