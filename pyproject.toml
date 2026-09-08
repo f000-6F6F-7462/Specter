@@ -47,7 +47,7 @@ ml = [
 [project.scripts]
 specter = "specter.entrypoints.cli:main"
 specter-api = "specter.entrypoints.http.asgi:main"
-specter-ingest = "specter.application.pipeline.supervisor:main"
+specter-ingest = "specter.entrypoints.workers.ingest_worker:main"
 specter-enroll = "specter.entrypoints.workers.enroll_worker:main"
 
 [tool.hatch.build.targets.wheel]

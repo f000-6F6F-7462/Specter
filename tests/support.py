@@ -10,11 +10,16 @@ def make_settings(**overrides: Any) -> Settings:
         "database": {"url": "sqlite+aiosqlite:///:memory:"},
         "security": {"api_key": "test-key"},
         "log": {"level": "WARNING"},
-        # In-process adapters — no Redis / MinIO / Qdrant / ONNX models needed.
+        # In-process adapters — no Redis / MinIO / Qdrant / ONNX models / media needed.
         "bus": "memory",
         "blob": "memory",
         "vectors": "memory",
         "inference": "fake",
+        "media": "synthetic",
+        "models": {
+            "detector": {"impl": "fake"},
+            "embedders": {"face": {"impl": "fake"}},
+        },
     }
     base.update(overrides)
     return Settings(**base)

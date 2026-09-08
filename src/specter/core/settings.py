@@ -71,6 +71,19 @@ class ModelSettings(BaseModel):
     )
 
 
+class PipelineSettings(BaseModel):
+    queue_size: int = Field(default=8, ge=1)
+    directory_refresh_s: float = Field(default=30.0, gt=0)
+    cooldown_s: float = Field(default=45.0, ge=0)
+    need: int = Field(default=3, ge=1)
+    window: int = Field(default=5, ge=1)
+    top_k: int = Field(default=5, ge=1)
+    min_detection_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    motion_min_delta: float = Field(default=2.0, ge=0.0)
+    capture_evidence: bool = True
+    evidence_ttl_s: int = Field(default=3600, ge=1)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="SPECTER_",
@@ -85,6 +98,7 @@ class Settings(BaseSettings):
     blob: str = "minio"  # minio | memory
     vectors: str = "qdrant"  # qdrant | memory
     inference: str = "insightface"  # insightface | fake
+    media: str = "gstreamer"  # gstreamer | synthetic
 
     log: LogSettings = LogSettings()
     redis: RedisSettings = RedisSettings()
@@ -93,6 +107,7 @@ class Settings(BaseSettings):
     s3: S3Settings = S3Settings()
     security: SecuritySettings = SecuritySettings()
     models: ModelSettings = ModelSettings()
+    pipeline: PipelineSettings = PipelineSettings()
 
     @classmethod
     def settings_customise_sources(
