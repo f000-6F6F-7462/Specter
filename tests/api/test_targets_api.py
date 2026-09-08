@@ -2,6 +2,10 @@ import json
 
 from httpx import AsyncClient
 
+from specter.contracts import EnrollJobMessage
+from specter.contracts.streams import JOBS_ENROLL
+from specter.core.di import Container
+
 
 async def _watchlist(client: AsyncClient) -> str:
     resp = await client.post(
@@ -51,6 +55,36 @@ class TestEnrollment:
         assert len(queued.json()) == 2
         ready = await client.get(f"/api/watchlists/{wl}/targets", params={"status": "ready"})
         assert ready.json() == []
+
+    async def test_enroll_publishes_one_job_per_image(
+        self, client: AsyncClient, container: Container, jpeg: bytes
+    ) -> None:
+        wl = await _watchlist(client)
+        out = await _enroll(
+            client,
+            wl,
+            [_spec("a", ["a1.jpg", "a2.jpg"]), _spec("b", ["b1.jpg"])],
+            [
+                ("images", ("a1.jpg", jpeg, "image/jpeg")),
+                ("images", ("a2.jpg", jpeg, "image/jpeg")),
+                ("images", ("b1.jpg", jpeg, "image/jpeg")),
+            ],
+        )
+        jobs = container.bus.published(JOBS_ENROLL, EnrollJobMessage)  # type: ignore[attr-defined]
+        assert len(jobs) == 3
+        assert all(isinstance(j, EnrollJobMessage) for j in jobs)
+        assert {j.target_id for j in jobs} == {i["target_id"] for i in out["items"]}
+        assert all(j.modality == "face" and j.blob_key.endswith(".jpg") for j in jobs)
+
+    async def test_enroll_non_person_type_is_422(self, client: AsyncClient, jpeg: bytes) -> None:
+        wl = await _watchlist(client)
+        spec = {"ref": "v", "label": "Van", "type": "vehicle", "image_names": ["v.jpg"]}
+        resp = await client.post(
+            f"/api/watchlists/{wl}/targets",
+            data={"targets": json.dumps([spec])},
+            files=[("images", ("v.jpg", jpeg, "image/jpeg"))],
+        )
+        assert resp.status_code == 422
 
     async def test_enrollment_batch_status(self, client: AsyncClient, jpeg: bytes) -> None:
         wl = await _watchlist(client)

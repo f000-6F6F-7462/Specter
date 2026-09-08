@@ -81,8 +81,10 @@ class Settings(BaseSettings):
     )
 
     env: str = "local"
-    bus: str = "redis"
-    blob: str = "minio"
+    bus: str = "redis"  # redis | memory
+    blob: str = "minio"  # minio | memory
+    vectors: str = "qdrant"  # qdrant | memory
+    inference: str = "insightface"  # insightface | fake
 
     log: LogSettings = LogSettings()
     redis: RedisSettings = RedisSettings()

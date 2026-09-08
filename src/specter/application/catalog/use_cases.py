@@ -21,7 +21,9 @@ from specter.application.catalog.dto import (
     UploadedImage,
     WatchlistView,
 )
-from specter.application.ports import BlobStore, UnitOfWork, UnitOfWorkFactory
+from specter.application.ports import BlobStore, EventBus, UnitOfWork, UnitOfWorkFactory
+from specter.contracts import EnrollJobMessage
+from specter.contracts.streams import JOBS_ENROLL
 from specter.core.errors import NotFoundError, RuleViolation
 from specter.core.ids import new_id
 from specter.domain.catalog import (
@@ -29,13 +31,25 @@ from specter.domain.catalog import (
     ImageStatus,
     ReferenceImage,
     Target,
+    TargetType,
     Watchlist,
 )
+
+_MODALITY = {TargetType.PERSON: "face"}
 
 
 def _blob_key(owner_id: str, image_id: str) -> str:
     now = datetime.now(UTC)
     return f"blobs/{owner_id}/reference/{now:%Y/%m}/{image_id}.jpg"
+
+
+def _modality(target_type: TargetType) -> str:
+    try:
+        return _MODALITY[target_type]
+    except KeyError:
+        raise RuleViolation(
+            f"enrollment for {target_type.value!r} targets is not supported yet"
+        ) from None
 
 
 def _worst_status(states: list[EnrollmentStatus]) -> EnrollmentStatus:
@@ -111,7 +125,10 @@ async def delete_watchlist(
 
 
 async def enroll_targets(
-    uow_factory: UnitOfWorkFactory, blob: BlobStore, req: EnrollTargetsRequest
+    uow_factory: UnitOfWorkFactory,
+    blob: BlobStore,
+    bus: EventBus,
+    req: EnrollTargetsRequest,
 ) -> EnrollTargetsResult:
     if not req.targets:
         raise RuleViolation("no targets in enrollment request")
@@ -120,11 +137,40 @@ async def enroll_targets(
 
     async with uow_factory() as uow:
         watchlist = await _load_watchlist(uow, req.owner_id, req.watchlist_id)
-        items = [
+        targets = [
             await _enroll_one(uow, blob, watchlist, spec, files_by_name, batch_id)
             for spec in req.targets
         ]
-    return EnrollTargetsResult(batch_id=batch_id, items=tuple(items))
+
+    # After commit: dispatch one job per image so the enroll worker can embed it.
+    for target, spec in zip(targets, req.targets, strict=True):
+        modality = _modality(spec.type)
+        for image in target.images:
+            await bus.publish(
+                JOBS_ENROLL,
+                target.id,
+                EnrollJobMessage(
+                    event_id=new_id("evt"),
+                    occurred_at=datetime.now(UTC),
+                    owner_id=req.owner_id,
+                    batch_id=batch_id,
+                    target_id=target.id,
+                    image_id=image.id,
+                    blob_key=image.blob_key,
+                    modality=modality,
+                ),
+            )
+
+    items = tuple(
+        EnrolledTargetView(
+            ref=spec.ref,
+            target_id=target.id,
+            status=target.status,
+            image_ids=tuple(image.id for image in target.images),
+        )
+        for target, spec in zip(targets, req.targets, strict=True)
+    )
+    return EnrollTargetsResult(batch_id=batch_id, items=items)
 
 
 async def _enroll_one(
@@ -134,9 +180,10 @@ async def _enroll_one(
     spec: TargetSpec,
     files_by_name: dict[str, UploadedImage],
     batch_id: str,
-) -> EnrolledTargetView:
+) -> Target:
     if not spec.image_names:
         raise RuleViolation(f"target {spec.ref!r} has no images")
+    _modality(spec.type)  # reject unsupported target types before any writes
     target = Target(
         id=new_id("tgt"),
         watchlist_id=watchlist.id,
@@ -154,12 +201,7 @@ async def _enroll_one(
         await blob.put(key, uploaded.data, uploaded.content_type)
         target.images.append(ReferenceImage(id=image_id, blob_key=key, status=ImageStatus.PENDING))
     await uow.targets.add(target)
-    return EnrolledTargetView(
-        ref=spec.ref,
-        target_id=target.id,
-        status=target.status,
-        image_ids=tuple(image.id for image in target.images),
-    )
+    return target
 
 
 async def list_targets(

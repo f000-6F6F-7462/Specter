@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
 
-from specter.application.ports import BlobStore, UnitOfWorkFactory
+from specter.application.ports import BlobStore, EventBus, UnitOfWorkFactory
 from specter.core.di import Container
 
 
@@ -47,6 +47,11 @@ def get_blob(container: ContainerDep) -> BlobStore:
     return container.blob
 
 
+def get_bus(container: ContainerDep) -> EventBus:
+    return container.bus
+
+
 OwnerDep = Annotated[str, Depends(require_owner)]
 UowDep = Annotated[UnitOfWorkFactory, Depends(get_uow_factory)]
 BlobDep = Annotated[BlobStore, Depends(get_blob)]
+BusDep = Annotated[EventBus, Depends(get_bus)]

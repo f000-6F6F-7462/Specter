@@ -8,13 +8,13 @@ from httpx import ASGITransport, AsyncClient
 from specter.core.di import Container, build_container
 from specter.entrypoints.http.asgi import create_app
 from specter.infrastructure.db import create_all
-from tests.support import test_settings
+from tests.support import make_settings
 
 
 @pytest.fixture
 async def container(tmp_path, monkeypatch) -> AsyncIterator[Container]:
     monkeypatch.chdir(tmp_path)
-    built = build_container(test_settings())
+    built = build_container(make_settings())
     await create_all(built.engine)
     yield built
     await built.engine.dispose()

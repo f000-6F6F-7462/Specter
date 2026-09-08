@@ -3,6 +3,7 @@ Application Protocols.
 """
 
 from collections.abc import AsyncIterator, Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
@@ -10,6 +11,7 @@ from specter.contracts import BrokerMessage
 from specter.domain.alerts import Alert, Disposition
 from specter.domain.catalog import EnrollmentStatus, Target, Watchlist
 from specter.domain.matching import Candidate
+from specter.domain.quality import QualityReport, RejectionReason
 from specter.domain.streams import StreamConfig, StreamHealth
 from specter.domain.vision import Crop, Detection, Embedding, Frame, Track, Vector
 
@@ -40,6 +42,29 @@ class Embedder(Protocol):
     modality: str
 
     async def embed(self, crops: Sequence[Crop]) -> list[Embedding]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceEmbedding:
+    """Outcome of running one reference image through detect -> quality -> align -> embed.
+
+    ``vector`` is set only when a single acceptable face was found; otherwise
+    ``rejection`` says why.
+    """
+
+    vector: Vector | None = None
+    quality: QualityReport | None = None
+    rejection: RejectionReason | None = None
+    faces_found: int = 0
+
+
+@runtime_checkable
+class FaceEmbeddingService(Protocol):
+    """Batch (enrollment) face encoder: image bytes -> a normalised 512-d vector."""
+
+    model_version: str
+
+    async def embed_reference(self, image: bytes) -> ReferenceEmbedding: ...
 
 
 #  vector store

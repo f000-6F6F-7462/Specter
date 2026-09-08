@@ -4,6 +4,8 @@
 env = "local"
 bus = "redis"
 blob = "minio"
+vectors = "qdrant"
+inference = "insightface"
 
 [log]
 level = "INFO"
