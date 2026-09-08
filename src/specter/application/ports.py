@@ -27,6 +27,9 @@ class FrameSource(Protocol):
     async def aclose(self) -> None: ...
 
 
+type FrameSourceFactory = Callable[[StreamConfig], FrameSource]
+
+
 @runtime_checkable
 class Detector(Protocol):
     async def detect(self, frames: Sequence[Frame]) -> list[list[Detection]]: ...
@@ -35,6 +38,9 @@ class Detector(Protocol):
 @runtime_checkable
 class Tracker(Protocol):
     def update(self, stream_id: str, detections: Sequence[Detection]) -> list[Track]: ...
+
+    def forget(self, stream_id: str) -> None:
+        """Drop a stream's tracking state when its pipeline stops."""
 
 
 @runtime_checkable

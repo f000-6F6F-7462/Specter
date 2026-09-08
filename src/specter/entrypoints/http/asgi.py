@@ -12,7 +12,7 @@ from specter import __version__
 from specter.core.di import Container, build_container
 from specter.entrypoints.http.deps import require_api_key
 from specter.entrypoints.http.errors import install_error_handlers
-from specter.entrypoints.http.routers import alerts, targets, watchlists
+from specter.entrypoints.http.routers import alerts, streams, targets, watchlists
 
 
 def create_app(container: Container | None = None) -> FastAPI:
@@ -39,6 +39,7 @@ def create_app(container: Container | None = None) -> FastAPI:
     api = APIRouter(prefix="/api", dependencies=[Depends(require_api_key)])
     api.include_router(watchlists.router)
     api.include_router(targets.router)
+    api.include_router(streams.router)
     api.include_router(alerts.router)
     app.include_router(api)
     return app

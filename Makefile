@@ -1,7 +1,7 @@
 PY ?= .venv/bin/python
 PIP ?= $(PY) -m pip
 
-.PHONY: help venv install fmt lint type test cov contracts migrate revision run-api run-enroll clean
+.PHONY: help venv install fmt lint type test cov contracts migrate revision run-api run-enroll run-ingest clean
 
 help:
 	@echo "venv       create .venv (Python 3.14)"
@@ -16,6 +16,7 @@ help:
 	@echo "revision   alembic revision --autogenerate -m \"$$m\""
 	@echo "run-api    uvicorn dev server on :8000"
 	@echo "run-enroll  the specter-enroll worker (needs Redis)"
+	@echo "run-ingest  the specter-ingest pipeline supervisor"
 
 venv:
 	python3.14 -m venv .venv
@@ -57,6 +58,9 @@ run-api:
 
 run-enroll:
 	$(PY) -m specter.entrypoints.workers.enroll_worker
+
+run-ingest:
+	$(PY) -m specter.entrypoints.workers.ingest_worker
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .coverage htmlcov **/__pycache__

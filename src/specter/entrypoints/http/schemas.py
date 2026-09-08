@@ -13,8 +13,16 @@ from specter.application.catalog import (
     TargetView,
     WatchlistView,
 )
+from specter.application.streams import StreamView
 from specter.domain.alerts import Disposition
 from specter.domain.catalog import EnrollmentStatus, ImageStatus, TargetType, WatchlistKind
+from specter.domain.streams import (
+    DesiredState,
+    SamplingMode,
+    StreamProtocol,
+    StreamStatus,
+    TransportProtocol,
+)
 
 
 class _Out(BaseModel):
@@ -220,3 +228,110 @@ class AlertPageOut(BaseModel):
 class ResolveIn(BaseModel):
     disposition: Disposition
     note: str | None = Field(default=None, max_length=2000)
+
+
+# streams
+
+
+class SourceIn(BaseModel):
+    protocol: StreamProtocol
+    url: str = Field(min_length=1, max_length=1024)
+    username: str | None = None
+    password: str | None = None
+    transport: TransportProtocol = TransportProtocol.TCP
+
+
+class SamplingIn(BaseModel):
+    mode: SamplingMode = SamplingMode.ADAPTIVE
+    target_fps: float = Field(default=10.0, gt=0, le=120)
+    min_fps: float = Field(default=3.0, gt=0, le=120)
+    motion_gating: bool = True
+
+
+class RoiIn(BaseModel):
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    w: float = Field(gt=0.0, le=1.0)
+    h: float = Field(gt=0.0, le=1.0)
+
+
+class StreamCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    source: SourceIn
+    camera_id: str | None = Field(default=None, max_length=128)
+    watchlist_ids: list[str] = Field(default_factory=list)
+    sampling: SamplingIn = Field(default_factory=SamplingIn)
+    roi: list[RoiIn] = Field(default_factory=list)
+    detect_classes: list[str] = Field(default_factory=list)
+
+
+class StreamUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    source: SourceIn | None = None
+    camera_id: str | None = Field(default=None, max_length=128)
+    watchlist_ids: list[str] | None = None
+    sampling: SamplingIn | None = None
+    roi: list[RoiIn] | None = None
+    detect_classes: list[str] | None = None
+    enabled: bool | None = None
+
+
+class StreamStateIn(BaseModel):
+    running: bool
+
+
+class SamplingOut(BaseModel):
+    mode: SamplingMode
+    target_fps: float
+    min_fps: float
+    motion_gating: bool
+
+
+class RoiOut(BaseModel):
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+class StreamOut(BaseModel):
+    id: str
+    owner_id: str
+    name: str
+    protocol: StreamProtocol
+    url: str
+    transport: TransportProtocol
+    has_credentials: bool
+    camera_id: str | None
+    watchlist_ids: list[str]
+    sampling: SamplingOut
+    roi: list[RoiOut]
+    detect_classes: list[str]
+    enabled: bool
+    desired_state: DesiredState
+    live_status: StreamStatus
+
+    @classmethod
+    def of(cls, view: StreamView) -> "StreamOut":
+        return cls(
+            id=view.id,
+            owner_id=view.owner_id,
+            name=view.name,
+            protocol=view.protocol,
+            url=view.url,
+            transport=view.transport,
+            has_credentials=view.has_credentials,
+            camera_id=view.camera_id,
+            watchlist_ids=list(view.watchlist_ids),
+            sampling=SamplingOut(
+                mode=view.sampling.mode,
+                target_fps=view.sampling.target_fps,
+                min_fps=view.sampling.min_fps,
+                motion_gating=view.sampling.motion_gating,
+            ),
+            roi=[RoiOut(x=r.x, y=r.y, w=r.w, h=r.h) for r in view.roi],
+            detect_classes=list(view.detect_classes),
+            enabled=view.enabled,
+            desired_state=view.desired_state,
+            live_status=view.live_status,
+        )

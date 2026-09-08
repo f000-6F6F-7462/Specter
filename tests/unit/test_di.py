@@ -20,6 +20,19 @@ def test_build_container_wires_the_memory_adapters(
     assert type(container.vectors).__name__ == "InMemoryVectorIndex"
     assert type(container.faces).__name__ == "FakeFaceEmbeddingService"
     assert type(container.blob).__name__ == "MemoryBlobStore"
+    assert type(container.detector).__name__ == "FakeDetector"
+    assert type(container.tracker).__name__ == "IouTracker"
+    assert list(container.embedders) == ["face"]
+    assert type(container.embedders["face"]).__name__ == "FakeEmbedder"
+    assert callable(container.frame_source_factory)
+
+
+def test_gstreamer_media_is_not_available_yet(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from specter.core.errors import ConfigurationError
+
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ConfigurationError):
+        build_container(make_settings(media="gstreamer"))
 
 
 def test_build_container_configures_root_logging(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

@@ -106,6 +106,46 @@ class StreamConfig:
         if not self.name.strip():
             raise RuleViolation("stream name must not be empty")
 
+    def rename(self, name: str) -> None:
+        if not name.strip():
+            raise RuleViolation("stream name must not be empty")
+        self.name = name
+
+    def retarget(self, source: StreamSource) -> None:
+        self.source = source
+
+    def set_sampling(self, sampling: SamplingConfig) -> None:
+        self.sampling = sampling
+
+    def set_watchlists(self, watchlist_ids: list[str]) -> None:
+        self.watchlist_ids = list(dict.fromkeys(watchlist_ids))
+
+    def set_roi(self, roi: list[RegionOfInterest]) -> None:
+        self.roi = list(roi)
+
+    def set_detect_classes(self, classes: list[str]) -> None:
+        self.detect_classes = list(dict.fromkeys(classes))
+
+    def enable(self) -> None:
+        self.enabled = True
+
+    def disable(self) -> None:
+        """Disabling also parks the desired state so the supervisor tears the run down."""
+        self.enabled = False
+        self.desired_state = DesiredState.STOPPED
+
+    def start(self) -> None:
+        if not self.enabled:
+            raise RuleViolation("cannot start a disabled stream")
+        self.desired_state = DesiredState.RUNNING
+
+    def stop(self) -> None:
+        self.desired_state = DesiredState.STOPPED
+
+    @property
+    def should_run(self) -> bool:
+        return self.enabled and self.desired_state is DesiredState.RUNNING
+
 
 @dataclass(frozen=True, slots=True)
 class StreamHealth:
