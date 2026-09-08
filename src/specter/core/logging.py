@@ -1,5 +1,4 @@
-"""Standard-library logging configuration.
-"""
+"""Standard-library logging configuration."""
 
 import json
 import logging

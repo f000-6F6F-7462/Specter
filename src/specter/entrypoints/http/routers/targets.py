@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from specter.application import catalog
 from specter.core.errors import RuleViolation
 from specter.domain.catalog import EnrollmentStatus
-from specter.entrypoints.http.deps import BlobDep, OwnerDep, UowDep
+from specter.entrypoints.http.deps import BlobDep, BusDep, OwnerDep, UowDep
 from specter.entrypoints.http.schemas import (
     BatchDeleteOut,
     EnrollmentBatchOut,
@@ -62,6 +62,7 @@ async def enroll_targets(
     owner: OwnerDep,
     uow: UowDep,
     blob: BlobDep,
+    bus: BusDep,
     targets: Annotated[str, Form(description="JSON array of target specs")],
     images: Annotated[list[UploadFile] | None, File()] = None,
 ) -> EnrollOut:
@@ -71,7 +72,7 @@ async def enroll_targets(
         targets=_parse_specs(targets),
         images=await _read_uploads(images or []),
     )
-    return EnrollOut.of(await catalog.enroll_targets(uow, blob, request))
+    return EnrollOut.of(await catalog.enroll_targets(uow, blob, bus, request))
 
 
 @router.get("/watchlists/{watchlist_id}/targets")

@@ -11,13 +11,16 @@ requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
-    "numpy>=2.5.2",
+    "numpy>=2.5.3",
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.4",
     "sqlalchemy[asyncio]>=2.0.52",
-    "alembic>=1.19.1",
+    "alembic>=1.19.2",
     "asyncpg>=0.31.0",
     "python-multipart>=0.0.32",
+    "redis>=8.1.0",
+    "aiobotocore>=3.9.1",
+    "qdrant-client>=1.19.0",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +34,13 @@ dev = [
     "mypy>=2.3.1",
     "httpx>=0.28.1",
     "aiosqlite>=0.22.1",
+]
+
+ml = [
+    "onnxruntime>=1.29.0",
+    "insightface>=2.0",
+    "opencv-python-headless>=5.0.0.93",
+    "pillow>=12.3.0",
 ]
 
 # Entry points.
@@ -65,15 +75,23 @@ files = ["src", "tests"]
 module = ["tests.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+disallow_untyped_calls = false
 disallow_any_generics = false
 warn_return_any = false
 warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = ["aiobotocore.*", "botocore.*", "insightface.*", "cv2"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers -m 'not integration'"
+markers = [
+    "integration: needs a live Redis / MinIO / Qdrant (run with -m integration)",
+]
 
 [tool.coverage.run]
 source = ["src/specter"]
@@ -96,6 +114,10 @@ max-line-length = 100
 [tool.pylint.design]
 max-locals = 20
 
+[tool.pylint.typecheck]
+# Optional [ml] extras — not installed for the gate; adapters import them lazily.
+ignored-modules = ["insightface", "insightface.app", "cv2"]
+
 [tool.pylint."messages control"]
 disable = [
     "missing-module-docstring",
@@ -106,5 +128,6 @@ disable = [
     "too-many-instance-attributes",
     "too-many-arguments",
     "too-many-positional-arguments",
+    "import-outside-toplevel",  # composition root & optional adapters load lazily
     "fixme",  # TODO / phase-marker comments are intentional
 ]
