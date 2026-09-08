@@ -50,7 +50,7 @@ def main() -> None:  # pragma: no cover - process entrypoint
         blob=container.blob,
         faces=container.faces,
         vectors=container.vectors,
-        bus=container.bus, 
+        bus=container.bus,
         clock=container.clock,
     )
     asyncio.run(consume_forever(deps, consumer=f"enroll-{os.getpid()}"))
