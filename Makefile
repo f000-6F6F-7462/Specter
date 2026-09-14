@@ -1,92 +1,64 @@
-PY ?= .venv/bin/python
-PIP ?= $(PY) -m pip
-COMPOSE ?= docker compose -f docker/docker-compose.yml
+.DEFAULT_GOAL := help
 
-.PHONY: help venv install fmt lint type test cov contracts migrate revision run-api run-enroll run-ingest clean \
-	up down up-app down-app docker-build test-integration
+.PHONY: help setup install lock upgrade-dependencies format lint type-check test \
+	test-integration test-hardware check ci clean require-uv
 
-help:
-	@echo "venv       create .venv (Python 3.14)"
-	@echo "install    install the package + dev extras (editable)"
-	@echo "fmt        isort + black (write)"
-	@echo "lint       isort + black (check) + pylint"
-	@echo "type       mypy"
-	@echo "test       pytest"
-	@echo "cov        pytest under coverage + report"
-	@echo "contracts  regenerate contracts/jsonschema/*.schema.json"
-	@echo "migrate    alembic upgrade head"
-	@echo "revision   alembic revision --autogenerate -m \"$$m\""
-	@echo "run-api    uvicorn dev server on :8000"
-	@echo "run-enroll  the specter-enroll worker (needs Redis)"
-	@echo "run-ingest  the specter-ingest pipeline supervisor"
-	@echo "up             postgres, redis, qdrant, minio (docker compose)"
-	@echo "down           stop the backing services"
-	@echo "up-app         + api/ingest/enroll containers, CPU-only (builds docker/Dockerfile)"
-	@echo "down-app       stop the app containers too"
-	@echo "docker-build   build the CPU-only app image standalone (specter:latest)"
-	@echo "test-integration  pytest -m integration against the compose stack"
+##@ Setup
 
-venv:
-	python3.14 -m venv .venv
-	$(PIP) install --upgrade pip
+setup: install  ## Prepare a fresh clone: dependencies and git hooks
+	uv run pre-commit install
 
-install:
-	$(PIP) install -e ".[dev]"
+install: require-uv  ## Create the environment and install dependencies
+	uv sync
 
-fmt:
-	$(PY) -m isort src tests alembic
-	$(PY) -m black src tests alembic
+lock: require-uv  ## Regenerate uv.lock from pyproject.toml
+	uv lock
 
-lint:
-	$(PY) -m isort --check-only src tests alembic
-	$(PY) -m black --check src tests alembic
-	$(PY) -m pylint src
+upgrade-dependencies: require-uv  ## Upgrade all dependencies within their allowed ranges
+	uv lock --upgrade
+	uv sync
 
-type:
-	$(PY) -m mypy
+##@ Quality
 
-test:
-	$(PY) -m pytest
+format: require-uv  ## Format code and apply safe lint fixes
+	uv run ruff format .
+	uv run ruff check --fix .
 
-cov:
-	$(PY) -m coverage run -m pytest
-	$(PY) -m coverage report
+lint: require-uv  ## Check formatting and lint rules
+	uv run ruff format --check .
+	uv run ruff check .
 
-contracts:
-	$(PY) -m specter.contracts.export contracts/jsonschema
+type-check: require-uv  ## Run mypy in strict mode
+	uv run mypy
 
-migrate:
-	$(PY) -m alembic upgrade head
+test: require-uv  ## Run unit tests
+	uv run pytest
 
-revision:
-	$(PY) -m alembic revision --autogenerate -m "$(m)"
+test-integration: require-uv  ## Run tests against real services (nats-server, Qdrant, FFmpeg)
+	uv run pytest -m integration
 
-run-api:
-	$(PY) -m uvicorn specter.entrypoints.http.asgi:create_app --factory --reload --port 8000
+test-hardware: require-uv  ## Run tests that need an accelerator (Hailo, CUDA)
+	uv run pytest -m hardware
 
-run-enroll:
-	$(PY) -m specter.entrypoints.workers.enroll_worker
+check: lint type-check test  ## Lint, type-check and unit tests
 
-run-ingest:
-	$(PY) -m specter.entrypoints.workers.ingest_worker
+ci: require-uv  ## Install exactly from uv.lock, then run all checks
+	uv sync --locked
+	$(MAKE) check
 
-clean:
-	rm -rf .pytest_cache .mypy_cache .coverage htmlcov **/__pycache__
+##@ Maintenance
 
-up:
-	$(COMPOSE) up -d
+clean:  ## Remove tool caches
+	rm -rf .pytest_cache .mypy_cache .ruff_cache
 
-down:
-	$(COMPOSE) down
+help:  ## Show this help
+	@awk 'BEGIN {FS = ":.*##"} \
+		/^[a-zA-Z_-]+:.*##/ {printf "  %-22s %s\n", $$1, $$2} \
+		/^##@/ {printf "\n%s\n", substr($$0, 5)}' $(MAKEFILE_LIST)
 
-up-app:
-	$(COMPOSE) --profile app up -d --build
-
-down-app:
-	$(COMPOSE) --profile app down
-
-docker-build:
-	docker build -f docker/Dockerfile -t specter:latest .
-
-test-integration:
-	$(PY) -m pytest -m integration
+# Fails early with an installation hint instead of a bare "command not found".
+require-uv:
+	@command -v uv >/dev/null 2>&1 || { \
+		echo "uv is not installed: https://docs.astral.sh/uv/getting-started/installation/"; \
+		exit 1; \
+	}

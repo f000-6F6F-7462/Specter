@@ -30,6 +30,7 @@ htmlcov/
 /models/
 *.pt
 *.onnx
+*.hef
 *.pth
 *.log
 /Ultralytics/
