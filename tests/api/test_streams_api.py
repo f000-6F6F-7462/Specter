@@ -1,5 +1,8 @@
 from httpx import AsyncClient
 
+from specter.core.di import Container
+from specter.domain.streams import preview_key
+
 
 def _body(**over: object) -> dict:
     body: dict = {
@@ -78,3 +81,32 @@ async def test_cross_owner_is_404(client: AsyncClient) -> None:
 
 async def test_unknown_stream_is_404(client: AsyncClient) -> None:
     assert (await client.get("/api/streams/stream_nope")).status_code == 404
+
+
+async def test_preview_404_before_any_frame_written(client: AsyncClient) -> None:
+    created = await _create(client)
+    resp = await client.get(f"/api/streams/{created['id']}/preview")
+    assert resp.status_code == 404
+
+
+async def test_preview_returns_presigned_url_once_a_frame_is_written(
+    client: AsyncClient, container: Container
+) -> None:
+    created = await _create(client)
+    key = preview_key("o_alice", created["id"], container.codec.extension)
+    await container.blob.put(key, b"fake-frame", container.codec.content_type)
+
+    resp = await client.get(f"/api/streams/{created['id']}/preview")
+    assert resp.status_code == 200
+    assert resp.json()["snapshot_url"] == f"memory://{key}?ttl=900"
+
+
+async def test_preview_cross_owner_is_404(client: AsyncClient, container: Container) -> None:
+    created = await _create(client)
+    key = preview_key("o_alice", created["id"], container.codec.extension)
+    await container.blob.put(key, b"fake-frame", container.codec.content_type)
+
+    resp = await client.get(
+        f"/api/streams/{created['id']}/preview", headers={"X-Owner-Id": "o_bob"}
+    )
+    assert resp.status_code == 404

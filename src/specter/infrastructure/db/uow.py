@@ -23,15 +23,20 @@ class SqlAlchemyUnitOfWork:
     streams: StreamRepo
     alerts: AlertRepo
 
-    def __init__(self, session_factory: SessionFactory) -> None:
+    def __init__(
+        self,
+        session_factory: SessionFactory,
+        secret_key: str = "dev-only-fernet-key-change-me",
+    ) -> None:
         self._session_factory = session_factory
+        self._secret_key = secret_key
         self._session: AsyncSession | None = None
 
     async def __aenter__(self) -> "SqlAlchemyUnitOfWork":
         self._session = self._session_factory()
         self.watchlists = SqlAlchemyWatchlistRepo(self._session)
         self.targets = SqlAlchemyTargetRepo(self._session)
-        self.streams = SqlAlchemyStreamRepo(self._session)
+        self.streams = SqlAlchemyStreamRepo(self._session, self._secret_key)
         self.alerts = SqlAlchemyAlertRepo(self._session)
         return self
 

@@ -17,6 +17,7 @@ async def create_watchlist(body: WatchlistCreate, owner: OwnerDep, uow: UowDep) 
             type=body.type,
             kind=body.kind,
             match_threshold=body.match_threshold,
+            metadata=body.metadata,
         ),
     )
     return WatchlistOut.of(view)
@@ -42,7 +43,9 @@ async def update_watchlist(
         health,
         owner,
         watchlist_id,
-        catalog.UpdateWatchlistRequest(name=body.name, match_threshold=body.match_threshold),
+        catalog.UpdateWatchlistRequest(
+            name=body.name, match_threshold=body.match_threshold, metadata=body.metadata
+        ),
     )
     return WatchlistOut.of(view)
 

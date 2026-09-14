@@ -49,7 +49,7 @@ class SecuritySettings(BaseModel):
 
 
 class DetectorSettings(BaseModel):
-    impl: str = "yolo"  # yolo | fake
+    impl: str = "yolo"  # yolo | onnx | fake
     weights: str = "yolo11m.pt"
     device: str = "mps"
     # None = let the model use its own built-in default; only override deliberately.
@@ -63,12 +63,18 @@ class EmbedderSettings(BaseModel):
     impl: str
     name: str | None = None
     weights: str | None = None
+    device: str = "cpu"
     max_batch: int = Field(default=16, ge=1)
     max_delay_ms: float = Field(default=8.0, gt=0)
 
 
+class TrackerSettings(BaseModel):
+    impl: str = "iou"  # iou | bytetrack
+
+
 class ModelSettings(BaseModel):
     detector: DetectorSettings = DetectorSettings()
+    tracker: TrackerSettings = TrackerSettings()
     embedders: dict[str, EmbedderSettings] = Field(
         default_factory=lambda: {"face": EmbedderSettings(impl="insightface", name="buffalo_l")}
     )
@@ -106,7 +112,7 @@ class Settings(BaseSettings):
     blob: str = "minio"  # minio | memory
     vectors: str = "qdrant"  # qdrant | memory
     inference: str = "insightface"  # insightface | fake
-    media: str = "gstreamer"  # gstreamer | synthetic
+    media: str = "gstreamer"  # gstreamer | pyav | webrtc | synthetic
 
     log: LogSettings = LogSettings()
     redis: RedisSettings = RedisSettings()

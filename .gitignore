@@ -28,7 +28,9 @@ htmlcov/
 # Runtime artifacts (not source)
 /data/
 /models/
-/contracts/jsonschema/
+*.pt
+*.onnx
+*.pth
 *.log
 /Ultralytics/
 /runs/

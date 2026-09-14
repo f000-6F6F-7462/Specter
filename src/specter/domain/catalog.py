@@ -111,6 +111,7 @@ class Watchlist:
     type: TargetType
     kind: WatchlistKind = WatchlistKind.WATCHLIST
     match_threshold: float = 0.78
+    metadata: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_text(self.name, "watchlist name")

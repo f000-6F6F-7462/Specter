@@ -11,6 +11,7 @@ from typing import Any
 
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from specter.contracts import BrokerMessage, parse_message
 
@@ -52,9 +53,14 @@ class RedisStreamBus:
     async def consume(self, stream: str, *, group: str, consumer: str) -> AsyncIterator[_Delivery]:
         await self._ensure_group(stream, group)
         while True:
-            response: Any = await self._redis.xreadgroup(
-                group, consumer, {stream: ">"}, count=self._batch, block=self._block_ms
-            )
+            try:
+                response: Any = await self._redis.xreadgroup(
+                    group, consumer, {stream: ">"}, count=self._batch, block=self._block_ms
+                )
+            except RedisTimeoutError:
+                # The client raises this for the ordinary "nothing arrived within BLOCK
+                # ms" case rather than returning a nil reply — not a broken connection.
+                continue
             for _name, entries in response or []:
                 for entry_id, fields in entries:
                     try:

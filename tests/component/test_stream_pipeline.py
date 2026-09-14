@@ -33,6 +33,7 @@ from specter.domain.streams import (
     StreamProtocol,
     StreamSource,
     StreamStatus,
+    preview_key,
 )
 from specter.domain.vision import Detection, Embedding, Frame
 from specter.infrastructure.blob.memory import MemoryBlobStore
@@ -215,6 +216,18 @@ async def test_match_fires_once_and_is_persisted_and_published(harness: Pipeline
     assert health is not None
     assert health.status is StreamStatus.STOPPED
     assert health.last_error is None
+
+
+async def test_health_tick_writes_a_preview_snapshot(harness: PipelineHarness) -> None:
+    # health_publish_interval_s=0.0 makes every frame's health check "due", since the
+    # frozen clock never advances on its own — isolates the preview-write path without
+    # needing to fast-forward FrozenClock between frames.
+    deps = replace(harness.deps, tuning=replace(harness.deps.tuning, health_publish_interval_s=0.0))
+
+    await run_stream(deps, harness.stream, stop=asyncio.Event())
+
+    key = preview_key(harness.stream.owner_id, harness.stream.id, deps.codec.extension)
+    assert key in harness.blob.keys()
 
 
 async def test_cross_restart_cooldown_prevents_re_firing(harness: PipelineHarness) -> None:

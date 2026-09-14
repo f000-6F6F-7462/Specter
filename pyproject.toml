@@ -21,6 +21,7 @@ dependencies = [
     "redis>=8.1.0",
     "aiobotocore>=3.9.1",
     "qdrant-client>=1.19.0",
+    "cryptography>=50.0.1",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +35,9 @@ dev = [
     "mypy>=2.3.1",
     "httpx>=0.28.1",
     "aiosqlite>=0.22.1",
+    "jsonschema>=4.26.0",
+    "types-jsonschema>=4.26.0",
+    "pre-commit>=4.6.2",
 ]
 
 ml = [
@@ -42,12 +46,34 @@ ml = [
     "ultralytics>=8.4.151",
     "opencv-python-headless>=5.0.0.93",
     "pillow>=12.3.0",
+    # ByteTrack — supervision's own ByteTrack is deprecated (removed in 0.31); this is
+    # its named replacement, and it depends on supervision itself for Detections.
+    "trackers>=2.6.0",
+    # Person/vehicle Re-ID (PersonEmbedder). Its own top-level __init__ eagerly imports
+    # its whole training framework (datasets, engines) via gdown et al.; we only ever
+    # load one self-contained file (reid/models/osnet.py) directly, bypassing that.
+    "torchreid>=0.2.5",
+    "torch>=2.14.0",
 ]
 
 # GStreamer capture. Also needs the system GStreamer 1.0 runtime + plugin set
-# (gst-plugins-{base,good,bad,libav}); see the README.
+# (gst-plugins-{base,good,bad,libav}).
 media = [
     "pygobject>=3.58.0",
+]
+
+# PyAV fallback capture (no system GStreamer plugin set needed — ffmpeg is vendored in
+# the wheel) — also what `specter bench`/`specter replay` decode local files with.
+media-pyav = [
+    # Capped to match aiortc's own "av<18.0.0" pin (the [webrtc] extra) — both may be
+    # installed together (a full-featured image), so they must resolve to one version.
+    "av>=14.0.0,<18.0.0",
+]
+
+# WebRTC capture (aiortc).
+webrtc = [
+    "aiortc>=1.15.0",
+    "httpx>=0.28.1",
 ]
 
 # Entry points.
@@ -153,5 +179,4 @@ disable = [
     "too-many-arguments",
     "too-many-positional-arguments",
     "import-outside-toplevel",  # composition root & optional adapters load lazily
-    "fixme",  # TODO / phase-marker comments are intentional
 ]

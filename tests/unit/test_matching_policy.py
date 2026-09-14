@@ -8,8 +8,29 @@ from specter.domain.matching import (
     NofMPolicy,
     SimpleThresholdPolicy,
     TrackMatchState,
+    calibrate_confidence,
 )
 from tests.conftest import make_candidate
+
+
+class TestCalibrateConfidence:
+    def test_at_threshold_is_half(self) -> None:
+        assert calibrate_confidence(0.6, 0.6) == pytest.approx(0.5)
+
+    def test_above_threshold_is_higher_than_half(self) -> None:
+        assert calibrate_confidence(0.8, 0.6) > 0.5
+
+    def test_below_threshold_is_lower_than_half(self) -> None:
+        assert calibrate_confidence(0.4, 0.6) < 0.5
+
+    def test_monotonic_in_similarity(self) -> None:
+        low = calibrate_confidence(0.61, 0.6)
+        high = calibrate_confidence(0.9, 0.6)
+        assert 0.0 < low < high < 1.0
+
+    def test_bounded_in_unit_interval(self) -> None:
+        assert 0.0 < calibrate_confidence(1.0, 0.0) < 1.0
+        assert 0.0 < calibrate_confidence(0.0, 1.0) < 1.0
 
 
 def run(

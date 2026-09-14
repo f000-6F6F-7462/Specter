@@ -3,6 +3,7 @@
 from dataclasses import asdict
 from typing import Any
 
+from specter.core.crypto import decrypt_json, encrypt_json
 from specter.domain.alerts import Alert, Disposition, MatchEvidence
 from specter.domain.catalog import (
     ImageStatus,
@@ -44,6 +45,7 @@ def watchlist_to_domain(row: WatchlistRow) -> Watchlist:
         type=TargetType(row.type),
         kind=WatchlistKind(row.kind),
         match_threshold=row.match_threshold,
+        metadata=dict(row.meta or {}),
     )
 
 
@@ -55,6 +57,7 @@ def watchlist_to_row(wl: Watchlist) -> WatchlistRow:
         type=wl.type.value,
         kind=wl.kind.value,
         match_threshold=wl.match_threshold,
+        meta=dict(wl.metadata),
     )
 
 
@@ -62,6 +65,7 @@ def apply_watchlist(row: WatchlistRow, wl: Watchlist) -> None:
     row.name = wl.name
     row.kind = wl.kind.value
     row.match_threshold = wl.match_threshold
+    row.meta = dict(wl.metadata)
 
 
 # target
@@ -153,8 +157,12 @@ def sync_target(row: TargetRow, target: Target) -> None:
 # stream
 
 
-def stream_to_domain(row: StreamRow) -> StreamConfig:
-    creds = StreamCredentials(**row.credentials) if row.credentials else None
+def stream_to_domain(row: StreamRow, secret_key: str) -> StreamConfig:
+    creds = (
+        StreamCredentials(**decrypt_json(row.credentials["token"], secret_key))
+        if row.credentials
+        else None
+    )
     source = StreamSource(
         protocol=StreamProtocol(row.protocol),
         url=row.url,
@@ -182,7 +190,7 @@ def stream_to_domain(row: StreamRow) -> StreamConfig:
     )
 
 
-def _stream_columns(cfg: StreamConfig) -> dict[str, Any]:
+def _stream_columns(cfg: StreamConfig, secret_key: str) -> dict[str, Any]:
     return {
         "owner_id": cfg.owner_id,
         "name": cfg.name,
@@ -190,7 +198,11 @@ def _stream_columns(cfg: StreamConfig) -> dict[str, Any]:
         "protocol": cfg.source.protocol.value,
         "url": cfg.source.url,
         "transport": cfg.source.transport.value,
-        "credentials": (asdict(cfg.source.credentials) if cfg.source.credentials else None),
+        "credentials": (
+            {"token": encrypt_json(asdict(cfg.source.credentials), secret_key)}
+            if cfg.source.credentials
+            else None
+        ),
         "sampling": {
             "mode": cfg.sampling.mode.value,
             "target_fps": cfg.sampling.target_fps,
@@ -205,12 +217,12 @@ def _stream_columns(cfg: StreamConfig) -> dict[str, Any]:
     }
 
 
-def stream_to_row(cfg: StreamConfig) -> StreamRow:
-    return StreamRow(id=cfg.id, **_stream_columns(cfg))
+def stream_to_row(cfg: StreamConfig, secret_key: str) -> StreamRow:
+    return StreamRow(id=cfg.id, **_stream_columns(cfg, secret_key))
 
 
-def apply_stream(row: StreamRow, cfg: StreamConfig) -> None:
-    for key, value in _stream_columns(cfg).items():
+def apply_stream(row: StreamRow, cfg: StreamConfig, secret_key: str) -> None:
+    for key, value in _stream_columns(cfg, secret_key).items():
         setattr(row, key, value)
 
 

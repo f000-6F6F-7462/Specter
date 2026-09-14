@@ -110,3 +110,10 @@ class QdrantVectorIndex:
 
     async def aclose(self) -> None:
         await self._client.close()
+
+    async def __aenter__(self) -> "QdrantVectorIndex":
+        await self.ensure_collections()
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None

@@ -10,6 +10,7 @@ gate (``addopts = -m 'not integration'``). Run it with a live stack:
 
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
+from pathlib import Path
 
 import pytest
 
@@ -125,11 +126,48 @@ def embedder(request: pytest.FixtureRequest) -> Embedder:
     return FaceEmbedder()
 
 
-@pytest.fixture(params=[pytest.param("synthetic", id="synthetic"), _real("gstreamer")])
-async def frame_source(request: pytest.FixtureRequest) -> AsyncIterator[FrameSource]:
+def _make_test_video(path: Path, *, frames: int = 5, size: tuple[int, int] = (64, 64)) -> None:
+    """A tiny local .mp4 for the ``pyav`` param — self-contained, no live camera or
+    Docker needed, unlike the ``gstreamer`` param below."""
+    import av
+    import numpy as np
+
+    container = av.open(str(path), mode="w")
+    stream = container.add_stream("mpeg4", rate=10)
+    stream.width, stream.height = size
+    stream.pix_fmt = "yuv420p"
+    for i in range(frames):
+        arr = np.full((size[1], size[0], 3), (i * 40) % 256, dtype=np.uint8)
+        vframe = av.VideoFrame.from_ndarray(arr, format="rgb24")
+        for packet in stream.encode(vframe):
+            container.mux(packet)
+    for packet in stream.encode():
+        container.mux(packet)
+    container.close()
+
+
+@pytest.fixture(
+    params=[
+        pytest.param("synthetic", id="synthetic"),
+        pytest.param("pyav", id="pyav"),
+        _real("gstreamer"),
+    ]
+)
+async def frame_source(
+    request: pytest.FixtureRequest, tmp_path: Path
+) -> AsyncIterator[FrameSource]:
     source: FrameSource
     if request.param == "synthetic":
         source = SyntheticFrameSource("stream_ct", count=3, fps=None)
+    elif request.param == "pyav":
+        from specter.infrastructure.media.pyav import PyAvFrameSource
+
+        video_path = tmp_path / "test.mp4"
+        _make_test_video(video_path)
+        # protocol is irrelevant for a local path (only RTSP adds a transport option)
+        source = PyAvFrameSource(
+            "stream_ct", StreamSource(protocol=StreamProtocol.HLS, url=str(video_path))
+        )
     else:
         from specter.infrastructure.media.gstreamer import GStreamerFrameSource
 

@@ -1,11 +1,16 @@
 """EventBus contract — holds for MemoryBus and RedisStreamBus alike."""
 
+import asyncio
+import os
 from datetime import UTC, datetime
+
+import pytest
 
 from specter.application.ports import EventBus
 from specter.contracts import EnrollJobMessage
 
 _STREAM = "specter:test:ct-jobs"
+_REDIS_URL = os.environ.get("SPECTER_TEST_REDIS_URL", "redis://localhost:6379/15")
 
 
 def _job(n: int) -> EnrollJobMessage:
@@ -48,8 +53,6 @@ async def test_acked_message_is_not_redelivered_to_the_same_group(
     await event_bus.publish(_STREAM, "tgt_0", _job(0))
     await drain(event_bus, _STREAM, group="g-once", count=1)
 
-    import asyncio
-
     again: list = []
     try:
         async with asyncio.timeout(1):
@@ -57,4 +60,26 @@ async def test_acked_message_is_not_redelivered_to_the_same_group(
                 again.append(delivery.message)
     except TimeoutError:
         pass
-    assert again == []
+    assert not again
+
+
+@pytest.mark.integration
+async def test_redis_consume_survives_repeated_idle_block_windows() -> None:
+    """Regression: redis-py raises its own ``TimeoutError`` — not a broken connection —
+    when ``XREADGROUP ... BLOCK`` finds nothing in time; ``consume`` must swallow that
+    and keep polling rather than let it kill the caller's loop."""
+    from specter.infrastructure.bus.redis_stream import RedisStreamBus
+
+    bus = RedisStreamBus(_REDIS_URL, block_ms=300)
+
+    async def _consume_one() -> None:
+        async for _delivery in bus.consume("specter:test:ct-idle", group="g-idle", consumer="ct"):
+            break
+
+    task = asyncio.create_task(_consume_one())
+    await asyncio.sleep(1.5)  # several idle BLOCK cycles
+
+    assert not task.done()
+
+    task.cancel()
+    await bus.aclose()

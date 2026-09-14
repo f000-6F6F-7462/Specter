@@ -21,7 +21,7 @@ from specter.contracts import (
 )
 from specter.core.ids import new_id
 from specter.domain.alerts import Alert, MatchEvent, MatchEvidence
-from specter.domain.matching import MatchDecision, TrackMatchState
+from specter.domain.matching import MatchDecision, TrackMatchState, calibrate_confidence
 from specter.domain.streams import StreamConfig
 from specter.domain.vision import BBox, Frame, Track
 
@@ -44,6 +44,8 @@ async def emit_match(
     )
     hit_count = sum(1 for s in state.recent if s >= resolved.threshold)
     target_fps = max(stream.sampling.target_fps, 1e-6)
+    similarity = _clamp01(decision.similarity)
+    threshold = _clamp01(resolved.threshold)
 
     event = MatchEvent(
         event_id=event_id,
@@ -58,8 +60,9 @@ async def emit_match(
         target_id=resolved.target_id,
         target_label=resolved.label,
         target_type=resolved.target_type,
-        similarity=_clamp01(decision.similarity),
-        threshold=_clamp01(resolved.threshold),
+        similarity=similarity,
+        threshold=threshold,
+        calibrated_confidence=calibrate_confidence(similarity, threshold),
         detection_class=track.detection.cls,
         detection_confidence=_clamp01(track.detection.confidence),
         bbox=track.detection.bbox,

@@ -5,6 +5,7 @@ place) and returns a ``MatchDecision``. ``now`` is monotonic seconds supplied by
 caller's ``Clock``; policies never read the wall clock.
 """
 
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
@@ -16,6 +17,19 @@ from specter.core.errors import RuleViolation
 class Candidate:
     target_id: str
     similarity: float
+
+
+def calibrate_confidence(similarity: float, threshold: float, *, steepness: float = 15.0) -> float:
+    """A monotonic 0..1 confidence proxy for a fired match, centered at the
+    watchlist's own ``match_threshold`` (exactly `0.5` there, approaching `1.0` as
+    the raw similarity clears it by a wide margin).
+
+    This is a heuristic, not a trained model — real calibration (Platt scaling
+    fit from ``resolve_alert`` true/false-positive dispositions) is future work.
+    It exists so ``calibrated_confidence`` carries a real signal instead of always
+    being ``None``.
+    """
+    return 1.0 / (1.0 + math.exp(-steepness * (similarity - threshold)))
 
 
 @dataclass(frozen=True, slots=True)

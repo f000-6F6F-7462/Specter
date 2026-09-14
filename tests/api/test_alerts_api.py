@@ -43,6 +43,9 @@ async def _seed_alerts(container: Container) -> None:
     async with container.uow_factory() as uow:
         for alert in rows:
             await uow.alerts.add(alert)
+    for alert in rows:
+        if alert.evidence.snapshot_key:
+            await container.blob.put(alert.evidence.snapshot_key, b"fake-jpeg", "image/jpeg")
 
 
 @pytest.fixture
@@ -85,7 +88,8 @@ class TestAlertActions:
     async def test_get_one_and_missing(self, client: AsyncClient, seeded: Container) -> None:
         got = await client.get("/api/alerts/evt_1")
         assert got.status_code == 200
-        assert got.json()["snapshot_url"] == "blobs/o_alice/snap/1.jpg"
+        # presigned per-request, not the raw blob key
+        assert got.json()["snapshot_url"] == "memory://blobs/o_alice/snap/1.jpg?ttl=900"
         assert (await client.get("/api/alerts/evt_nope")).status_code == 404
 
     async def test_cross_owner_is_404(self, client: AsyncClient, seeded: Container) -> None:

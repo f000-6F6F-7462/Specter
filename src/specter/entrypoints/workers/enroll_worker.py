@@ -6,6 +6,7 @@ of what happened.
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 
@@ -53,4 +54,15 @@ def main() -> None:  # pragma: no cover - process entrypoint
         bus=container.bus,
         clock=container.clock,
     )
-    asyncio.run(consume_forever(deps, consumer=f"enroll-{os.getpid()}"))
+
+    async def _run() -> None:
+        async with contextlib.AsyncExitStack() as stack:
+            for adapter in container.lifecycle:
+                await stack.enter_async_context(adapter)
+            await consume_forever(deps, consumer=f"enroll-{os.getpid()}")
+
+    asyncio.run(_run())
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

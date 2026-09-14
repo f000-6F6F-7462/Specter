@@ -1,7 +1,9 @@
 PY ?= .venv/bin/python
 PIP ?= $(PY) -m pip
+COMPOSE ?= docker compose -f docker/docker-compose.yml
 
-.PHONY: help venv install fmt lint type test cov contracts migrate revision run-api run-enroll run-ingest clean
+.PHONY: help venv install fmt lint type test cov contracts migrate revision run-api run-enroll run-ingest clean \
+	up down up-app down-app docker-build test-integration
 
 help:
 	@echo "venv       create .venv (Python 3.14)"
@@ -17,6 +19,12 @@ help:
 	@echo "run-api    uvicorn dev server on :8000"
 	@echo "run-enroll  the specter-enroll worker (needs Redis)"
 	@echo "run-ingest  the specter-ingest pipeline supervisor"
+	@echo "up             postgres, redis, qdrant, minio (docker compose)"
+	@echo "down           stop the backing services"
+	@echo "up-app         + api/ingest/enroll containers, CPU-only (builds docker/Dockerfile)"
+	@echo "down-app       stop the app containers too"
+	@echo "docker-build   build the CPU-only app image standalone (specter:latest)"
+	@echo "test-integration  pytest -m integration against the compose stack"
 
 venv:
 	python3.14 -m venv .venv
@@ -64,3 +72,21 @@ run-ingest:
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .coverage htmlcov **/__pycache__
+
+up:
+	$(COMPOSE) up -d
+
+down:
+	$(COMPOSE) down
+
+up-app:
+	$(COMPOSE) --profile app up -d --build
+
+down-app:
+	$(COMPOSE) --profile app down
+
+docker-build:
+	docker build -f docker/Dockerfile -t specter:latest .
+
+test-integration:
+	$(PY) -m pytest -m integration
