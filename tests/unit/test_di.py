@@ -33,7 +33,17 @@ def test_build_container_wires_the_memory_adapters(
     assert list(container.embedders) == ["face"]
     assert type(container.embedders["face"]).__name__ == "FakeEmbedder"
     assert type(container.codec).__name__ == "NumpyFrameCodec"
+    assert type(container.health).__name__ == "InMemoryHealthStore"
     assert callable(container.frame_source_factory)
+
+
+def test_redis_bus_selects_the_redis_health_store(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    container = build_container(make_settings(bus="redis"))
+    assert type(container.bus).__name__ == "RedisStreamBus"
+    assert type(container.health).__name__ == "RedisHealthStore"
 
 
 def test_gstreamer_media_builds_a_lazy_factory(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

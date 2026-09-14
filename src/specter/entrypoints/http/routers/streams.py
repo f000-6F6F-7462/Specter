@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status
 
 from specter.application import streams
-from specter.entrypoints.http.deps import OwnerDep, UowDep
+from specter.entrypoints.http.deps import HealthDep, OwnerDep, UowDep
 from specter.entrypoints.http.schemas import (
     StreamCreate,
     StreamOut,
@@ -42,11 +42,14 @@ def _roi(body: StreamCreate | StreamUpdate) -> tuple[streams.RoiSpec, ...] | Non
 
 
 @router.post("/streams", status_code=status.HTTP_201_CREATED)
-async def create_stream(body: StreamCreate, owner: OwnerDep, uow: UowDep) -> StreamOut:
+async def create_stream(
+    body: StreamCreate, owner: OwnerDep, uow: UowDep, health: HealthDep
+) -> StreamOut:
     source = _source(body)
     assert source is not None  # StreamCreate.source is required
     view = await streams.create_stream(
         uow,
+        health,
         streams.CreateStreamRequest(
             owner_id=owner,
             name=body.name,
@@ -62,21 +65,22 @@ async def create_stream(body: StreamCreate, owner: OwnerDep, uow: UowDep) -> Str
 
 
 @router.get("/streams")
-async def list_streams(owner: OwnerDep, uow: UowDep) -> list[StreamOut]:
-    return [StreamOut.of(v) for v in await streams.list_streams(uow, owner)]
+async def list_streams(owner: OwnerDep, uow: UowDep, health: HealthDep) -> list[StreamOut]:
+    return [StreamOut.of(v) for v in await streams.list_streams(uow, health, owner)]
 
 
 @router.get("/streams/{stream_id}")
-async def get_stream(stream_id: str, owner: OwnerDep, uow: UowDep) -> StreamOut:
-    return StreamOut.of(await streams.get_stream(uow, owner, stream_id))
+async def get_stream(stream_id: str, owner: OwnerDep, uow: UowDep, health: HealthDep) -> StreamOut:
+    return StreamOut.of(await streams.get_stream(uow, health, owner, stream_id))
 
 
 @router.patch("/streams/{stream_id}")
 async def update_stream(
-    stream_id: str, body: StreamUpdate, owner: OwnerDep, uow: UowDep
+    stream_id: str, body: StreamUpdate, owner: OwnerDep, uow: UowDep, health: HealthDep
 ) -> StreamOut:
     view = await streams.update_stream(
         uow,
+        health,
         owner,
         stream_id,
         streams.UpdateStreamRequest(
@@ -95,9 +99,9 @@ async def update_stream(
 
 @router.put("/streams/{stream_id}/state")
 async def set_stream_state(
-    stream_id: str, body: StreamStateIn, owner: OwnerDep, uow: UowDep
+    stream_id: str, body: StreamStateIn, owner: OwnerDep, uow: UowDep, health: HealthDep
 ) -> StreamOut:
-    view = await streams.set_stream_state(uow, owner, stream_id, running=body.running)
+    view = await streams.set_stream_state(uow, health, owner, stream_id, running=body.running)
     return StreamOut.of(view)
 
 

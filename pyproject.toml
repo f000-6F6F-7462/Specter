@@ -99,6 +99,7 @@ module = [
     "ultralytics.*",
 ]
 ignore_missing_imports = true
+implicit_reexport = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

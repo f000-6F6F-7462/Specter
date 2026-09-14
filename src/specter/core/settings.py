@@ -86,6 +86,8 @@ class PipelineSettings(BaseModel):
     capture_evidence: bool = True
     evidence_ttl_s: int = Field(default=3600, ge=1)
     evidence_format: str = "jpeg"  # jpeg | npy
+    health_publish_interval_s: float = Field(default=2.0, gt=0)
+    health_ttl_s: int = Field(default=10, ge=1)
 
 
 class Settings(BaseSettings):

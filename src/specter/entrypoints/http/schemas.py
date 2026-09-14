@@ -19,6 +19,7 @@ from specter.domain.catalog import EnrollmentStatus, ImageStatus, TargetType, Wa
 from specter.domain.streams import (
     DesiredState,
     SamplingMode,
+    StreamHealth,
     StreamProtocol,
     StreamStatus,
     TransportProtocol,
@@ -294,6 +295,18 @@ class RoiOut(BaseModel):
     h: float
 
 
+class HealthOut(BaseModel):
+    status: StreamStatus
+    fps_in: float
+    fps_processed: float
+    frames_dropped_pct: float
+    last_frame_at: datetime | None
+    reconnect_count: int
+    inference_p95_ms: float
+    queue_depth: dict[str, int]
+    last_error: str | None
+
+
 class StreamOut(BaseModel):
     id: str
     owner_id: str
@@ -310,6 +323,7 @@ class StreamOut(BaseModel):
     enabled: bool
     desired_state: DesiredState
     live_status: StreamStatus
+    health: HealthOut | None
 
     @classmethod
     def of(cls, view: StreamView) -> "StreamOut":
@@ -334,4 +348,21 @@ class StreamOut(BaseModel):
             enabled=view.enabled,
             desired_state=view.desired_state,
             live_status=view.live_status,
+            health=_health_out(view.health),
         )
+
+
+def _health_out(health: StreamHealth | None) -> HealthOut | None:
+    if health is None:
+        return None
+    return HealthOut(
+        status=health.status,
+        fps_in=health.fps_in,
+        fps_processed=health.fps_processed,
+        frames_dropped_pct=health.frames_dropped_pct,
+        last_frame_at=health.last_frame_at,
+        reconnect_count=health.reconnect_count,
+        inference_p95_ms=health.inference_p95_ms,
+        queue_depth=dict(health.queue_depth),
+        last_error=health.last_error,
+    )

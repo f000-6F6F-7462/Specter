@@ -131,6 +131,7 @@ def main() -> None:  # pragma: no cover - process entrypoint
         vectors=container.vectors,
         blob=container.blob,
         bus=container.bus,
+        health=container.health,
         clock=container.clock,
         codec=container.codec,
         tuning=container.pipeline_tuning,

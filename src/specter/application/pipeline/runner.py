@@ -11,8 +11,10 @@ the connection. The supervisor owns restarts.
 import asyncio
 import contextlib
 import logging
+from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from specter.application.pipeline.deps import PipelineDeps
 from specter.application.pipeline.directory import ResolvedTarget, StreamDirectory
@@ -21,9 +23,10 @@ from specter.application.pipeline.sampling import AdaptiveSampler, SampleOutcome
 from specter.application.pipeline.stages import crops_from_tracks, filter_detections
 from specter.application.ports import FrameSource
 from specter.contracts import EVENTS_STREAM_STATUS, StreamStatusMessage
+from specter.core.clock import Clock
 from specter.core.ids import new_id
 from specter.domain.matching import Candidate, NofMPolicy, TrackMatchState
-from specter.domain.streams import StreamConfig, StreamStatus
+from specter.domain.streams import StreamConfig, StreamHealth, StreamStatus
 from specter.domain.vision import Frame, Track
 
 log = logging.getLogger(__name__)
@@ -38,6 +41,8 @@ class StreamMetrics:
     processed: int = 0
     searches: int = 0
     matches: int = 0
+    queue_depth: int = 0
+    """Current depth of the decode->inference hand-off queue."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,11 +64,68 @@ class _Matcher:
         return self.policies.get(resolved.watchlist_id, fallback)
 
 
+class _HealthTracker:
+    """Turns running metrics into periodic ``StreamHealth`` snapshots.
+
+    Rates (``fps_in``/``fps_processed``/``frames_dropped_pct``) are windowed — computed
+    from the delta since the previous snapshot, not the stream's lifetime average — so a
+    stream that struggled earlier and has since recovered reports as healthy *now*.
+    """
+
+    def __init__(self, clock: Clock, *, window: int = 200) -> None:
+        self._clock = clock
+        self._latencies_ms: deque[float] = deque(maxlen=window)
+        self.last_frame_at: datetime | None = None
+        self._prev_received = 0
+        self._prev_processed = 0
+        self._prev_dropped = 0
+        self._last_publish_at = clock.now()
+
+    def record_frame(self, frame: Frame, latency_ms: float) -> None:
+        self.last_frame_at = frame.captured_at or self._clock.wall()
+        self._latencies_ms.append(latency_ms)
+
+    def due(self, interval_s: float) -> bool:
+        return self._clock.now() - self._last_publish_at >= interval_s
+
+    def snapshot(
+        self, status: StreamStatus, metrics: StreamMetrics, *, last_error: str | None = None
+    ) -> StreamHealth:
+        now = self._clock.now()
+        elapsed = max(now - self._last_publish_at, 1e-6)
+        received_delta = metrics.received - self._prev_received
+        dropped_delta = metrics.dropped - self._prev_dropped
+        health = StreamHealth(
+            status=status,
+            fps_in=max(received_delta / elapsed, 0.0),
+            fps_processed=max((metrics.processed - self._prev_processed) / elapsed, 0.0),
+            frames_dropped_pct=(dropped_delta / received_delta * 100.0) if received_delta else 0.0,
+            last_frame_at=self.last_frame_at,
+            inference_p95_ms=_p95(self._latencies_ms),
+            queue_depth={"decode": metrics.queue_depth},
+            last_error=last_error,
+        )
+        self._prev_received = metrics.received
+        self._prev_processed = metrics.processed
+        self._prev_dropped = metrics.dropped
+        self._last_publish_at = now
+        return health
+
+
+def _p95(samples: deque[float]) -> float:
+    if not samples:
+        return 0.0
+    ordered = sorted(samples)
+    return ordered[min(int(len(ordered) * 0.95), len(ordered) - 1)]
+
+
 async def run_stream(
     deps: PipelineDeps, stream: StreamConfig, *, stop: asyncio.Event
 ) -> StreamOutcome:
     metrics = StreamMetrics()
+    vitals = _HealthTracker(deps.clock)
     await _publish(deps, stream, StreamStatus.PROVISIONING, metrics)
+    await _write_health(deps, stream, StreamStatus.PROVISIONING, metrics, vitals)
     directory = await StreamDirectory.load(deps.uow_factory, stream)
     matcher = _Matcher(directory=directory, policies=_policies(deps, directory))
     sampler = AdaptiveSampler(stream.sampling, motion_min_delta=deps.tuning.motion_min_delta)
@@ -71,12 +133,14 @@ async def run_stream(
 
     last_refresh = deps.clock.now()
     announced = False
+    current_status = StreamStatus.PROVISIONING
     reason = "source_exhausted"
     try:
         async for frame in _shed_frames(source, sampler, deps.tuning.queue_size, stop, metrics):
             metrics.processed += 1
             if not announced:
                 announced = True
+                current_status = StreamStatus.RUNNING
                 await _publish(deps, stream, StreamStatus.RUNNING, metrics)
 
             now = deps.clock.now()
@@ -85,20 +149,30 @@ async def run_stream(
                 matcher.policies = _policies(deps, matcher.directory)
                 last_refresh = now
 
+            t0 = deps.clock.now()
             await _process_frame(deps, stream, matcher, frame, metrics)
+            vitals.record_frame(frame, (deps.clock.now() - t0) * 1000.0)
+
+            if vitals.due(deps.tuning.health_publish_interval_s):
+                await _write_health(deps, stream, current_status, metrics, vitals)
         if stop.is_set():
             reason = "stopped"
     except asyncio.CancelledError:
         await _publish(deps, stream, StreamStatus.STOPPED, metrics, detail="cancelled")
+        await _write_health(
+            deps, stream, StreamStatus.STOPPED, metrics, vitals, last_error="cancelled"
+        )
         deps.tracker.forget(stream.id)
         raise
     except Exception as exc:
         log.exception("stream %s pipeline failed", stream.id)
         await _publish(deps, stream, StreamStatus.ERROR, metrics, detail=repr(exc))
+        await _write_health(deps, stream, StreamStatus.ERROR, metrics, vitals, last_error=repr(exc))
         deps.tracker.forget(stream.id)
         raise
 
     await _publish(deps, stream, StreamStatus.STOPPED, metrics)
+    await _write_health(deps, stream, StreamStatus.STOPPED, metrics, vitals)
     deps.tracker.forget(stream.id)
     return StreamOutcome(stream_id=stream.id, reason=reason, metrics=metrics)
 
@@ -127,6 +201,7 @@ async def _shed_frames(
                     queue.put_nowait(frame)
                 except asyncio.QueueFull:
                     metrics.dropped += 1
+                metrics.queue_depth = queue.qsize()
         except Exception as exc:  # pylint: disable=broad-exception-caught
             failure.append(exc)  # stashed, then re-raised from the generator body
         finally:
@@ -136,7 +211,9 @@ async def _shed_frames(
     try:
         while not (done.is_set() and queue.empty()):
             try:
-                yield await asyncio.wait_for(queue.get(), timeout=0.1)
+                frame = await asyncio.wait_for(queue.get(), timeout=0.1)
+                metrics.queue_depth = queue.qsize()
+                yield frame
             except TimeoutError:
                 if stop.is_set() and queue.empty():
                     break
@@ -196,9 +273,19 @@ async def _decide(
     state = matcher.states.setdefault((track.track_id, modality), TrackMatchState())
     policy = matcher.policy_for(resolved, _fallback_policy(deps))
     decision = policy.evaluate(state, hit, deps.clock.now())
-    if decision.fire and resolved is not None:
-        await emit_match(deps, stream, resolved, frame, track, decision, state)
-        metrics.matches += 1
+    if not (decision.fire and resolved is not None):
+        return
+
+    # The in-process NofMPolicy cooldown (above) is enough within one run_stream call,
+    # but a supervisor restart wipes it along with everything else in `matcher.states`.
+    # This KV check is the belt-and-suspenders backstop that survives that restart.
+    cooldown_key = f"{stream.id}:{track.track_id}:{resolved.target_id}"
+    if await deps.health.in_cooldown(cooldown_key):
+        return
+
+    await emit_match(deps, stream, resolved, frame, track, decision, state)
+    await deps.health.mark_cooldown(cooldown_key, ttl_s=int(deps.tuning.cooldown_s))
+    metrics.matches += 1
 
 
 def _first_resolved(
@@ -251,3 +338,16 @@ async def _publish(
         ),
     )
     await deps.bus.publish(EVENTS_STREAM_STATUS, stream.id, message)
+
+
+async def _write_health(
+    deps: PipelineDeps,
+    stream: StreamConfig,
+    status: StreamStatus,
+    metrics: StreamMetrics,
+    vitals: _HealthTracker,
+    *,
+    last_error: str | None = None,
+) -> None:
+    health = vitals.snapshot(status, metrics, last_error=last_error)
+    await deps.health.set_health(stream.id, health, ttl_s=deps.tuning.health_ttl_s)

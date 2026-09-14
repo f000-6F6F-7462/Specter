@@ -13,6 +13,7 @@ from specter.domain.streams import (
     SamplingMode,
     StreamConfig,
     StreamCredentials,
+    StreamHealth,
     StreamProtocol,
     StreamSource,
     StreamStatus,
@@ -135,10 +136,17 @@ class StreamView:
     enabled: bool
     desired_state: DesiredState
     live_status: StreamStatus
+    health: StreamHealth | None = None
+    """The most recent snapshot from the shared KV, or ``None`` if the stream has never
+    run or its snapshot expired (``pipeline.health_ttl_s``) — e.g. a crashed process."""
 
     @classmethod
     def of(
-        cls, stream: StreamConfig, *, live_status: StreamStatus = StreamStatus.STOPPED
+        cls,
+        stream: StreamConfig,
+        *,
+        live_status: StreamStatus = StreamStatus.STOPPED,
+        health: StreamHealth | None = None,
     ) -> "StreamView":
         return cls(
             id=stream.id,
@@ -156,4 +164,5 @@ class StreamView:
             enabled=stream.enabled,
             desired_state=stream.desired_state,
             live_status=live_status,
+            health=health,
         )

@@ -26,6 +26,7 @@ async def test_create_lists_and_gets(client: AsyncClient) -> None:
     assert created["live_status"] == "stopped"
     assert created["has_credentials"] is False
     assert created["watchlist_ids"] == ["wl_a", "wl_b"]
+    assert created["health"] is None  # nothing has run yet
 
     listed = await client.get("/api/streams")
     assert [s["id"] for s in listed.json()] == [created["id"]]
