@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status
 
 from specter.application import catalog
-from specter.entrypoints.http.deps import OwnerDep, UowDep
+from specter.entrypoints.http.deps import HealthDep, OwnerDep, UowDep
 from specter.entrypoints.http.schemas import WatchlistCreate, WatchlistOut, WatchlistUpdate
 
 router = APIRouter(tags=["watchlists"])
@@ -35,10 +35,11 @@ async def get_watchlist(watchlist_id: str, owner: OwnerDep, uow: UowDep) -> Watc
 
 @router.patch("/watchlists/{watchlist_id}")
 async def update_watchlist(
-    watchlist_id: str, body: WatchlistUpdate, owner: OwnerDep, uow: UowDep
+    watchlist_id: str, body: WatchlistUpdate, owner: OwnerDep, uow: UowDep, health: HealthDep
 ) -> WatchlistOut:
     view = await catalog.update_watchlist(
         uow,
+        health,
         owner,
         watchlist_id,
         catalog.UpdateWatchlistRequest(name=body.name, match_threshold=body.match_threshold),
@@ -47,5 +48,7 @@ async def update_watchlist(
 
 
 @router.delete("/watchlists/{watchlist_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_watchlist(watchlist_id: str, owner: OwnerDep, uow: UowDep) -> None:
-    await catalog.delete_watchlist(uow, owner, watchlist_id)
+async def delete_watchlist(
+    watchlist_id: str, owner: OwnerDep, uow: UowDep, health: HealthDep
+) -> None:
+    await catalog.delete_watchlist(uow, health, owner, watchlist_id)

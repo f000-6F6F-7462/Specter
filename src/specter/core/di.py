@@ -203,6 +203,8 @@ def _pipeline_tuning(settings: Settings) -> PipelineTuning:
         evidence_ttl_s=p.evidence_ttl_s,
         health_publish_interval_s=p.health_publish_interval_s,
         health_ttl_s=p.health_ttl_s,
+        aimd_decrease_factor=p.aimd_decrease_factor,
+        aimd_increase_fps=p.aimd_increase_fps,
     )
 
 

@@ -39,6 +39,10 @@ class RedisHealthStore:
     async def bump_watchlist_version(self, watchlist_id: str) -> int:
         return int(await self._redis.incr(_VERSION_PREFIX + watchlist_id))
 
+    async def get_watchlist_version(self, watchlist_id: str) -> int:
+        raw: Any = await self._redis.get(_VERSION_PREFIX + watchlist_id)
+        return int(raw) if raw is not None else 0
+
     async def aclose(self) -> None:
         await self._redis.aclose()
 

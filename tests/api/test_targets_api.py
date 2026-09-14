@@ -128,21 +128,27 @@ class TestTargetLifecycle:
         )
         return wl, out["items"][0]["target_id"]
 
-    async def test_get_patch_delete(self, client: AsyncClient, jpeg: bytes) -> None:
-        _, tid = await self._one_target(client, jpeg)
+    async def test_get_patch_delete(
+        self, client: AsyncClient, container: Container, jpeg: bytes
+    ) -> None:
+        wl_id, tid = await self._one_target(client, jpeg)
 
         got = await client.get(f"/api/targets/{tid}")
         assert got.status_code == 200
         assert got.json()["status"] == "queued"
 
+        before = await container.health.get_watchlist_version(wl_id)
         patched = await client.patch(
             f"/api/targets/{tid}", json={"enabled": False, "label": "Renamed"}
         )
         assert patched.json()["enabled"] is False
         assert patched.json()["label"] == "Renamed"
+        assert await container.health.get_watchlist_version(wl_id) == before + 1
 
+        before = await container.health.get_watchlist_version(wl_id)
         assert (await client.delete(f"/api/targets/{tid}")).status_code == 204
         assert (await client.get(f"/api/targets/{tid}")).status_code == 404
+        assert await container.health.get_watchlist_version(wl_id) == before + 1
 
     async def test_add_and_remove_images(self, client: AsyncClient, jpeg: bytes) -> None:
         _, tid = await self._one_target(client, jpeg)
@@ -161,7 +167,9 @@ class TestTargetLifecycle:
         missing = await client.delete(f"/api/targets/{tid}/images/img_nope")
         assert missing.status_code == 404
 
-    async def test_batch_delete(self, client: AsyncClient, jpeg: bytes) -> None:
+    async def test_batch_delete(
+        self, client: AsyncClient, container: Container, jpeg: bytes
+    ) -> None:
         wl = await _watchlist(client)
         out = await _enroll(
             client,
@@ -172,6 +180,7 @@ class TestTargetLifecycle:
                 ("images", ("b.jpg", jpeg, "image/jpeg")),
             ],
         )
+        before = await container.health.get_watchlist_version(wl)
         ids = ",".join(i["target_id"] for i in out["items"])
         resp = await client.delete(
             f"/api/watchlists/{wl}/targets", params={"ids": f"{ids},tgt_bogus"}
@@ -179,6 +188,7 @@ class TestTargetLifecycle:
         assert resp.status_code == 200
         assert resp.json()["deleted"] == 2
         assert (await client.get(f"/api/watchlists/{wl}/targets")).json() == []
+        assert await container.health.get_watchlist_version(wl) == before + 1
 
     async def test_cross_owner_target_is_404(self, client: AsyncClient, jpeg: bytes) -> None:
         _, tid = await self._one_target(client, jpeg)

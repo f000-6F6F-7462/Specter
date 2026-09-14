@@ -1,5 +1,7 @@
 from httpx import AsyncClient
 
+from specter.core.di import Container
+
 
 async def _create(client: AsyncClient, **body: object) -> dict:
     payload = {"name": "VIPs", "type": "person", "kind": "blacklist"} | body
@@ -25,19 +27,24 @@ class TestWatchlistCrud:
         assert resp.status_code == 200
         assert resp.json() == []
 
-    async def test_patch_updates_fields(self, client: AsyncClient) -> None:
+    async def test_patch_updates_fields(self, client: AsyncClient, container: Container) -> None:
         wl = await _create(client)
+        before = await container.health.get_watchlist_version(wl["id"])
         resp = await client.patch(
             f"/api/watchlists/{wl['id']}", json={"name": "Renamed", "match_threshold": 0.5}
         )
         assert resp.status_code == 200
         assert resp.json()["name"] == "Renamed"
         assert resp.json()["match_threshold"] == 0.5
+        # A running stream picks this up without waiting out directory_refresh_s.
+        assert await container.health.get_watchlist_version(wl["id"]) == before + 1
 
-    async def test_delete_then_404(self, client: AsyncClient) -> None:
+    async def test_delete_then_404(self, client: AsyncClient, container: Container) -> None:
         wl = await _create(client)
+        before = await container.health.get_watchlist_version(wl["id"])
         assert (await client.delete(f"/api/watchlists/{wl['id']}")).status_code == 204
         assert (await client.get(f"/api/watchlists/{wl['id']}")).status_code == 404
+        assert await container.health.get_watchlist_version(wl["id"]) == before + 1
 
     async def test_get_missing_is_404_problem_json(self, client: AsyncClient) -> None:
         resp = await client.get("/api/watchlists/wl_nope")

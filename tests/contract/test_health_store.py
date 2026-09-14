@@ -49,3 +49,13 @@ async def test_watchlist_version_increments(health_store: HealthStore) -> None:
     first = await health_store.bump_watchlist_version("wl_ct")
     second = await health_store.bump_watchlist_version("wl_ct")
     assert second == first + 1
+
+
+async def test_get_watchlist_version_defaults_to_zero(health_store: HealthStore) -> None:
+    assert await health_store.get_watchlist_version("wl_ct_never_bumped") == 0
+
+
+async def test_get_watchlist_version_reflects_bumps(health_store: HealthStore) -> None:
+    await health_store.bump_watchlist_version("wl_ct_reads")
+    await health_store.bump_watchlist_version("wl_ct_reads")
+    assert await health_store.get_watchlist_version("wl_ct_reads") == 2

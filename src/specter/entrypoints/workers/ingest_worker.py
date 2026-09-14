@@ -41,6 +41,9 @@ class _Supervisor:
     backoff_s: float = _RESTART_BACKOFF_S
     running: dict[str, _Run] = field(default_factory=dict)
     cooldown: dict[str, float] = field(default_factory=dict)
+    reconnects: dict[str, int] = field(default_factory=dict)
+    """Crash count since the stream was last cleanly stopped/started — reported through
+    StreamHealth.reconnect_count (run_stream itself has no memory across restarts)."""
 
     async def run(self, *, stop: asyncio.Event) -> None:
         try:
@@ -72,7 +75,10 @@ class _Supervisor:
     def _start(self, config: StreamConfig) -> None:
         stop = asyncio.Event()
         task = asyncio.create_task(
-            run_stream(self.deps, config, stop=stop), name=f"stream:{config.id}"
+            run_stream(
+                self.deps, config, stop=stop, reconnect_count=self.reconnects.get(config.id, 0)
+            ),
+            name=f"stream:{config.id}",
         )
         self.running[config.id] = _Run(config=config, task=task, stop=stop)
         log.info("stream %s started", config.id)
@@ -81,10 +87,12 @@ class _Supervisor:
         del self.running[stream_id]
         exc = run.task.exception() if not run.task.cancelled() else None
         if exc is not None:
+            self.reconnects[stream_id] = self.reconnects.get(stream_id, 0) + 1
             self.cooldown[stream_id] = self.deps.clock.now() + self.backoff_s
             log.warning("stream %s crashed (%r); backing off %.0fs", stream_id, exc, self.backoff_s)
         else:
             self.cooldown.pop(stream_id, None)
+            self.reconnects.pop(stream_id, None)
             log.info("stream %s finished", stream_id)
 
     async def _stop_one(self, stream_id: str) -> None:
@@ -96,6 +104,7 @@ class _Supervisor:
         if pending:
             run.task.cancel()
         await asyncio.gather(run.task, return_exceptions=True)
+        self.reconnects.pop(stream_id, None)  # a deliberate stop clears the crash count
         log.info("stream %s stopped", stream_id)
 
     async def _stop_all(self) -> None:
@@ -116,8 +125,11 @@ async def supervise(
     *,
     stop: asyncio.Event,
     poll_s: float = _POLL_S,
+    backoff_s: float = _RESTART_BACKOFF_S,
 ) -> None:
-    await _Supervisor(deps=deps, uow_factory=uow_factory, poll_s=poll_s).run(stop=stop)
+    await _Supervisor(deps=deps, uow_factory=uow_factory, poll_s=poll_s, backoff_s=backoff_s).run(
+        stop=stop
+    )
 
 
 def main() -> None:  # pragma: no cover - process entrypoint
