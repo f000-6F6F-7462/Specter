@@ -21,6 +21,7 @@ from specter.application.ports import (
     FrameCodec,
     FrameSource,
     FrameSourceFactory,
+    HealthStore,
     Tracker,
     UnitOfWork,
     UnitOfWorkFactory,
@@ -35,6 +36,7 @@ from specter.infrastructure.blob.memory import MemoryBlobStore
 from specter.infrastructure.bus.memory import MemoryBus
 from specter.infrastructure.db import create_engine, session_factory
 from specter.infrastructure.db.uow import SqlAlchemyUnitOfWork
+from specter.infrastructure.health.memory import InMemoryHealthStore
 from specter.infrastructure.media.codec import NumpyFrameCodec
 from specter.infrastructure.media.fakes import SyntheticFrameSource
 from specter.infrastructure.ml.detector import FakeDetector
@@ -52,6 +54,7 @@ class Container:
     uow_factory: UnitOfWorkFactory
     blob: BlobStore
     bus: EventBus
+    health: HealthStore
     vectors: VectorIndex
     faces: FaceEmbeddingService
     frame_source_factory: FrameSourceFactory
@@ -76,6 +79,15 @@ def _build_bus(settings: Settings) -> EventBus:
 
         return RedisStreamBus(settings.redis.url, maxlen=settings.redis.stream_maxlen)
     return MemoryBus()
+
+
+def _build_health(settings: Settings, clock: Clock) -> HealthStore:
+    # Same selector as the bus — one Redis instance for messaging *and* caching.
+    if settings.bus == "redis":
+        from specter.infrastructure.health.redis import RedisHealthStore
+
+        return RedisHealthStore(settings.redis.url)
+    return InMemoryHealthStore(clock)
 
 
 def _build_vectors(settings: Settings) -> VectorIndex:
@@ -167,6 +179,8 @@ def _pipeline_tuning(settings: Settings) -> PipelineTuning:
         motion_min_delta=p.motion_min_delta,
         capture_evidence=p.capture_evidence,
         evidence_ttl_s=p.evidence_ttl_s,
+        health_publish_interval_s=p.health_publish_interval_s,
+        health_ttl_s=p.health_ttl_s,
     )
 
 
@@ -176,17 +190,19 @@ def build_container(settings: Settings | None = None) -> Container:
 
     engine = create_engine(settings.database.url)
     sessions = session_factory(engine)
+    clock = SystemClock()
 
     def uow_factory() -> UnitOfWork:
         return SqlAlchemyUnitOfWork(sessions)
 
     return Container(
         settings=settings,
-        clock=SystemClock(),
+        clock=clock,
         engine=engine,
         uow_factory=uow_factory,
         blob=_build_blob(settings),
         bus=_build_bus(settings),
+        health=_build_health(settings, clock),
         vectors=_build_vectors(settings),
         faces=_build_faces(settings),
         frame_source_factory=_build_frame_source_factory(settings),

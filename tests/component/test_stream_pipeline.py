@@ -5,7 +5,7 @@ match event.
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -27,7 +27,13 @@ from specter.domain.catalog import (
     Watchlist,
     WatchlistKind,
 )
-from specter.domain.streams import SamplingConfig, StreamConfig, StreamProtocol, StreamSource
+from specter.domain.streams import (
+    SamplingConfig,
+    StreamConfig,
+    StreamProtocol,
+    StreamSource,
+    StreamStatus,
+)
 from specter.domain.vision import Detection, Embedding, Frame
 from specter.infrastructure.blob.memory import MemoryBlobStore
 from specter.infrastructure.bus.memory import MemoryBus
@@ -37,6 +43,7 @@ from specter.infrastructure.db import (
     create_engine,
     session_factory,
 )
+from specter.infrastructure.health.memory import InMemoryHealthStore
 from specter.infrastructure.media.codec import NumpyFrameCodec
 from specter.infrastructure.media.fakes import SyntheticFrameSource
 from specter.infrastructure.ml.detector import FakeDetector
@@ -106,6 +113,7 @@ async def harness(request: pytest.FixtureRequest) -> AsyncIterator[PipelineHarne
     )
 
     bus, blob = MemoryBus(), MemoryBlobStore()
+    clock = FrozenClock()
     detector: Any = (
         _SlowDetector(float(params["detector_delay_s"]))
         if "detector_delay_s" in params
@@ -125,7 +133,8 @@ async def harness(request: pytest.FixtureRequest) -> AsyncIterator[PipelineHarne
         vectors=vectors,
         blob=blob,
         bus=bus,
-        clock=FrozenClock(),
+        health=InMemoryHealthStore(clock),
+        clock=clock,
         codec=NumpyFrameCodec(),
         tuning=PipelineTuning(
             need=1,
@@ -201,6 +210,25 @@ async def test_match_fires_once_and_is_persisted_and_published(harness: Pipeline
 
     assert {"provisioning", "running", "stopped"}.issubset(set(harness.statuses()))
     assert len(harness.blob.keys()) == 2  # snapshot + crop
+
+    health = await harness.deps.health.get_health(harness.stream.id)
+    assert health is not None
+    assert health.status is StreamStatus.STOPPED
+    assert health.last_error is None
+
+
+async def test_cross_restart_cooldown_prevents_re_firing(harness: PipelineHarness) -> None:
+    """A supervisor restart gives run_stream a fresh in-process match state (new
+    tracker, new N-of-M window) — the KV cooldown from the first run is what stops it
+    re-emitting the same match immediately."""
+    first = await run_stream(harness.deps, harness.stream, stop=asyncio.Event())
+    assert first.metrics.matches == 1
+
+    restarted = replace(harness.deps, tracker=IouTracker())
+    second = await run_stream(restarted, harness.stream, stop=asyncio.Event())
+
+    assert second.metrics.matches == 0
+    assert len(harness.match_events()) == 1  # no new match was published
 
 
 async def test_stop_before_start_processes_nothing(harness: PipelineHarness) -> None:

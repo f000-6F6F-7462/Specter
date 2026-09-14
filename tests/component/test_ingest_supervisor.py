@@ -18,6 +18,7 @@ from specter.infrastructure.db import (
     create_engine,
     session_factory,
 )
+from specter.infrastructure.health.memory import InMemoryHealthStore
 from specter.infrastructure.media.codec import NumpyFrameCodec
 from specter.infrastructure.media.fakes import SyntheticFrameSource
 from specter.infrastructure.ml.detector import FakeDetector
@@ -51,6 +52,7 @@ async def env() -> AsyncIterator[tuple[UowFactory, PipelineDeps, MemoryBus]]:
         return SqlAlchemyUnitOfWork(sessions)
 
     bus = MemoryBus()
+    clock = FrozenClock()
     deps = PipelineDeps(
         uow_factory=uow_factory,
         frame_source_factory=lambda s: SyntheticFrameSource(s.id, count=None, fps=30.0),
@@ -60,7 +62,8 @@ async def env() -> AsyncIterator[tuple[UowFactory, PipelineDeps, MemoryBus]]:
         vectors=InMemoryVectorIndex(),
         blob=MemoryBlobStore(),
         bus=bus,
-        clock=FrozenClock(),
+        health=InMemoryHealthStore(clock),
+        clock=clock,
         codec=NumpyFrameCodec(),
         tuning=PipelineTuning(directory_refresh_s=1e9),
     )

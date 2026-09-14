@@ -1,15 +1,19 @@
 """Stream-management use cases.
 
-Plain async functions: ``uow_factory`` first, then the request. One call == one Unit of
-Work == one transaction. Cross-owner access is denied by comparing ``owner_id`` on every
-read.
+Plain async functions: deps first (``uow_factory``, ``health``), then the request. One
+call == one Unit of Work == one transaction. Cross-owner access is denied by comparing
+``owner_id`` on every read.
 
-These only manage *configuration*. The ``specter-ingest`` supervisor watches
-``desired_state`` and brings pipelines up or down to match; authoritative runtime health
-travels on the ``stream_status`` event feed, not through this API.
+These manage *configuration*; the ``specter-ingest`` supervisor watches
+``desired_state`` and brings pipelines up or down to match. ``live_status``/``health``
+on the returned view come from the shared KV (``HealthStore``) that ``run_stream``
+writes to periodically — ``None`` health means the stream has never run, or its
+snapshot expired (the process crashed or was never started).
 """
 
-from specter.application.ports import UnitOfWork, UnitOfWorkFactory
+import asyncio
+
+from specter.application.ports import HealthStore, UnitOfWork, UnitOfWorkFactory
 from specter.application.streams.dto import (
     CreateStreamRequest,
     StreamView,
@@ -17,7 +21,7 @@ from specter.application.streams.dto import (
 )
 from specter.core.errors import NotFoundError
 from specter.core.ids import new_id
-from specter.domain.streams import DesiredState, StreamConfig, StreamStatus
+from specter.domain.streams import DesiredState, StreamConfig, StreamHealth, StreamStatus
 
 _LIVE_STATUS = {
     DesiredState.RUNNING: StreamStatus.RUNNING,
@@ -25,11 +29,14 @@ _LIVE_STATUS = {
 }
 
 
-def _view(stream: StreamConfig) -> StreamView:
-    return StreamView.of(stream, live_status=_LIVE_STATUS[stream.desired_state])
+def _view(stream: StreamConfig, health: StreamHealth | None) -> StreamView:
+    live_status = health.status if health is not None else _LIVE_STATUS[stream.desired_state]
+    return StreamView.of(stream, live_status=live_status, health=health)
 
 
-async def create_stream(uow_factory: UnitOfWorkFactory, req: CreateStreamRequest) -> StreamView:
+async def create_stream(
+    uow_factory: UnitOfWorkFactory, health: HealthStore, req: CreateStreamRequest
+) -> StreamView:
     stream = StreamConfig(
         id=new_id("stream"),
         owner_id=req.owner_id,
@@ -43,23 +50,29 @@ async def create_stream(uow_factory: UnitOfWorkFactory, req: CreateStreamRequest
     )
     async with uow_factory() as uow:
         await uow.streams.add(stream)
-    return _view(stream)
+    return _view(stream, await health.get_health(stream.id))
 
 
-async def list_streams(uow_factory: UnitOfWorkFactory, owner_id: str) -> list[StreamView]:
+async def list_streams(
+    uow_factory: UnitOfWorkFactory, health: HealthStore, owner_id: str
+) -> list[StreamView]:
     async with uow_factory() as uow:
-        streams = await uow.streams.list_for_owner(owner_id)
-    return [_view(s) for s in streams]
+        configs = await uow.streams.list_for_owner(owner_id)
+    healths = await asyncio.gather(*(health.get_health(c.id) for c in configs))
+    return [_view(c, h) for c, h in zip(configs, healths, strict=True)]
 
 
-async def get_stream(uow_factory: UnitOfWorkFactory, owner_id: str, stream_id: str) -> StreamView:
+async def get_stream(
+    uow_factory: UnitOfWorkFactory, health: HealthStore, owner_id: str, stream_id: str
+) -> StreamView:
     async with uow_factory() as uow:
         stream = await _load_stream(uow, owner_id, stream_id)
-    return _view(stream)
+    return _view(stream, await health.get_health(stream_id))
 
 
 async def update_stream(
     uow_factory: UnitOfWorkFactory,
+    health: HealthStore,
     owner_id: str,
     stream_id: str,
     req: UpdateStreamRequest,
@@ -85,11 +98,16 @@ async def update_stream(
         elif req.enabled is False:
             stream.disable()
         await uow.streams.update(stream)
-    return _view(stream)
+    return _view(stream, await health.get_health(stream_id))
 
 
 async def set_stream_state(
-    uow_factory: UnitOfWorkFactory, owner_id: str, stream_id: str, *, running: bool
+    uow_factory: UnitOfWorkFactory,
+    health: HealthStore,
+    owner_id: str,
+    stream_id: str,
+    *,
+    running: bool,
 ) -> StreamView:
     async with uow_factory() as uow:
         stream = await _load_stream(uow, owner_id, stream_id)
@@ -98,7 +116,7 @@ async def set_stream_state(
         else:
             stream.stop()
         await uow.streams.update(stream)
-    return _view(stream)
+    return _view(stream, await health.get_health(stream_id))
 
 
 async def delete_stream(uow_factory: UnitOfWorkFactory, owner_id: str, stream_id: str) -> None:

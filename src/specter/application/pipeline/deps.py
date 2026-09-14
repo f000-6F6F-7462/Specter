@@ -15,6 +15,7 @@ from specter.application.ports import (
     EventBus,
     FrameCodec,
     FrameSourceFactory,
+    HealthStore,
     Tracker,
     UnitOfWorkFactory,
     VectorIndex,
@@ -46,6 +47,12 @@ class PipelineTuning:
     capture_evidence: bool = True
     evidence_ttl_s: int = 3600
 
+    health_publish_interval_s: float = 2.0
+    """How often a stream writes its health snapshot to the shared KV."""
+
+    health_ttl_s: int = 10
+    """TTL on that snapshot — a stalled/crashed stream's health naturally expires."""
+
 
 @dataclass(frozen=True, slots=True)
 class PipelineDeps:
@@ -57,6 +64,7 @@ class PipelineDeps:
     vectors: VectorIndex
     blob: BlobStore
     bus: EventBus
+    health: HealthStore
     clock: Clock
     codec: FrameCodec
     tuning: PipelineTuning = field(default_factory=PipelineTuning)

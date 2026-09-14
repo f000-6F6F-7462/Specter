@@ -20,12 +20,15 @@ from specter.application.ports import (
     EventBus,
     FrameCodec,
     FrameSource,
+    HealthStore,
     VectorIndex,
 )
+from specter.core.clock import SystemClock
 from specter.core.settings import DetectorSettings, S3Settings
 from specter.domain.streams import StreamProtocol, StreamSource
 from specter.infrastructure.blob.memory import MemoryBlobStore
 from specter.infrastructure.bus.memory import MemoryBus
+from specter.infrastructure.health.memory import InMemoryHealthStore
 from specter.infrastructure.media.codec import NumpyFrameCodec
 from specter.infrastructure.media.fakes import SyntheticFrameSource
 from specter.infrastructure.ml.detector import FakeDetector
@@ -67,6 +70,18 @@ async def blob_store(request: pytest.FixtureRequest) -> AsyncIterator[BlobStore]
     )
     await store.ensure_bucket()
     yield store
+
+
+@pytest.fixture(params=[_MEMORY, _real("redis")])
+async def health_store(request: pytest.FixtureRequest) -> AsyncIterator[HealthStore]:
+    if request.param == "memory":
+        yield InMemoryHealthStore(SystemClock())
+        return
+    from specter.infrastructure.health.redis import RedisHealthStore
+
+    store = RedisHealthStore(_REDIS_URL)
+    yield store
+    await store.aclose()
 
 
 @pytest.fixture(params=[_MEMORY, _real("qdrant")])
