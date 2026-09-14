@@ -1,27 +1,21 @@
 repos:
   - repo: local
     hooks:
-      - id: isort
-        name: isort
-        entry: .venv/bin/python -m isort src tests alembic
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --check .
         language: system
         types: [python]
         pass_filenames: false
-      - id: black
-        name: black
-        entry: .venv/bin/python -m black src tests alembic
-        language: system
-        types: [python]
-        pass_filenames: false
-      - id: pylint
-        name: pylint
-        entry: .venv/bin/python -m pylint src
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check .
         language: system
         types: [python]
         pass_filenames: false
       - id: mypy
         name: mypy
-        entry: .venv/bin/python -m mypy
+        entry: uv run mypy
         language: system
         types: [python]
         pass_filenames: false

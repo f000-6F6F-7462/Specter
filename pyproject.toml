@@ -5,178 +5,81 @@ build-backend = "hatchling.build"
 [project]
 name = "specter"
 version = "0.1.0"
-description = "Specter Vision Engine — real-time object & face detection core engine"
+description = "Real-time multi-camera edge vision engine: face recognition, object rules and appearance re-identification"
 readme = "README.md"
-requires-python = ">=3.14"
-dependencies = [
-    "pydantic>=2.13.5",
-    "pydantic-settings>=2.15.0",
-    "numpy>=2.5.3",
-    "fastapi>=0.141.1",
-    "uvicorn[standard]>=0.52.4",
-    "sqlalchemy[asyncio]>=2.0.52",
-    "alembic>=1.19.2",
-    "asyncpg>=0.31.0",
-    "python-multipart>=0.0.32",
-    "redis>=8.1.0",
-    "aiobotocore>=3.9.1",
-    "qdrant-client>=1.19.0",
-    "cryptography>=50.0.1",
-]
+requires-python = ">=3.12"
+dependencies = []
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
+    "mypy>=2.3.1",
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "coverage[toml]>=7.16.0",
-    "black>=26.5.1",
-    "isort>=9.0.1",
-    "pylint>=4.0.8",
-    "mypy>=2.3.1",
-    "httpx>=0.28.1",
-    "aiosqlite>=0.22.1",
-    "jsonschema>=4.26.0",
-    "types-jsonschema>=4.26.0",
-    "pre-commit>=4.6.2",
+    "ruff>=0.12.0",
 ]
-
-ml = [
-    "onnxruntime>=1.29.0",
-    "insightface>=2.0",
-    "ultralytics>=8.4.151",
-    "opencv-python-headless>=5.0.0.93",
-    "pillow>=12.3.0",
-    # ByteTrack — supervision's own ByteTrack is deprecated (removed in 0.31); this is
-    # its named replacement, and it depends on supervision itself for Detections.
-    "trackers>=2.6.0",
-    # Person/vehicle Re-ID (PersonEmbedder). Its own top-level __init__ eagerly imports
-    # its whole training framework (datasets, engines) via gdown et al.; we only ever
-    # load one self-contained file (reid/models/osnet.py) directly, bypassing that.
-    "torchreid>=0.2.5",
-    "torch>=2.14.0",
-]
-
-# GStreamer capture. Also needs the system GStreamer 1.0 runtime + plugin set
-# (gst-plugins-{base,good,bad,libav}).
-media = [
-    "pygobject>=3.58.0",
-]
-
-# PyAV fallback capture (no system GStreamer plugin set needed — ffmpeg is vendored in
-# the wheel) — also what `specter bench`/`specter replay` decode local files with.
-media-pyav = [
-    # Capped to match aiortc's own "av<18.0.0" pin (the [webrtc] extra) — both may be
-    # installed together (a full-featured image), so they must resolve to one version.
-    "av>=14.0.0,<18.0.0",
-]
-
-# WebRTC capture (aiortc).
-webrtc = [
-    "aiortc>=1.15.0",
-    "httpx>=0.28.1",
-]
-
-# Entry points.
-[project.scripts]
-specter = "specter.entrypoints.cli:main"
-specter-api = "specter.entrypoints.http.asgi:main"
-specter-ingest = "specter.entrypoints.workers.ingest_worker:main"
-specter-enroll = "specter.entrypoints.workers.enroll_worker:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/specter"]
 
-[tool.black]
+[tool.ruff]
 line-length = 100
-target-version = ["py314"]
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["legacy"]
 
-[tool.isort]
-profile = "black"
-line_length = 100
-src_paths = ["src", "tests"]
-known_first_party = ["specter"]
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # import sorting
+    "N",     # PEP 8 naming
+    "D",     # docstrings
+    "UP",    # modern syntax for the target Python version
+    "B",     # likely bugs
+    "A",     # shadowed builtins
+    "C4",    # comprehensions
+    "SIM",   # simplifications
+    "RET",   # return statements
+    "ARG",   # unused arguments
+    "PL",    # pylint rules
+    "PERF",  # performance anti-patterns
+    "S",     # security
+    "PT",    # pytest style
+    "ERA",   # commented-out code
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "D105",  # magic methods explain themselves
+    "D107",  # __init__ is described by the class docstring
+    "D417",  # Args sections list only the parameters that need explaining
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pylint]
+max-args = 8
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "D",        # test names describe the behavior under test
+    "S101",     # assert is how pytest checks
+    "PLR2004",  # expected values are written inline in tests
+]
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.12"
 strict = true
-plugins = ["pydantic.mypy"]
 warn_unreachable = true
-warn_redundant_casts = true
 files = ["src", "tests"]
 
-[[tool.mypy.overrides]]
-module = ["tests.*"]
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-disallow_untyped_calls = false
-disallow_any_generics = false
-warn_return_any = false
-warn_unused_ignores = false
-
-[[tool.mypy.overrides]]
-module = [
-    "aiobotocore.*",
-    "botocore.*",
-    "insightface.*",
-    "cv2",
-    "gi",
-    "gi.*",
-    "ultralytics",
-    "ultralytics.*",
-]
-ignore_missing_imports = true
-implicit_reexport = true
-
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["src"]
-addopts = "-ra -q --strict-markers -m 'not integration'"
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers -m 'not integration and not hardware'"
 markers = [
-    "integration: needs a live Redis / MinIO / Qdrant (run with -m integration)",
-]
-
-[tool.coverage.run]
-source = ["src/specter"]
-branch = true
-
-[tool.coverage.report]
-show_missing = true
-skip_covered = true
-exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "\\.\\.\\.", "raise NotImplementedError"]
-
-[tool.pylint.main]
-py-version = "3.14"
-jobs = 0
-persistent = false
-source-roots = ["src"]
-
-[tool.pylint.format]
-max-line-length = 100
-
-[tool.pylint.design]
-max-locals = 20
-
-[tool.pylint.typecheck]
-# Optional [ml] / [media] extras — not installed for the gate; adapters import them lazily.
-ignored-modules = [
-    "insightface",
-    "insightface.app",
-    "cv2",
-    "gi",
-    "gi.repository",
-    "ultralytics",
-]
-
-[tool.pylint."messages control"]
-disable = [
-    "missing-module-docstring",
-    "missing-class-docstring",
-    "missing-function-docstring",
-    "too-few-public-methods",
-    "duplicate-code",
-    "too-many-instance-attributes",
-    "too-many-arguments",
-    "too-many-positional-arguments",
-    "import-outside-toplevel",  # composition root & optional adapters load lazily
+    "integration: needs real services such as nats-server, Qdrant or FFmpeg",
+    "hardware: needs a specific accelerator such as Hailo or CUDA",
 ]
