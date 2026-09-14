@@ -5,6 +5,7 @@ must not mutate it in place.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import numpy as np
 
@@ -62,6 +63,7 @@ class Frame:
     seq: int
     ts: float
     image: np.ndarray
+    captured_at: datetime | None = None
 
     @property
     def shape(self) -> tuple[int, ...]:

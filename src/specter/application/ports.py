@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
+import numpy as np
+
 from specter.contracts import BrokerMessage
 from specter.domain.alerts import Alert, Disposition
 from specter.domain.catalog import EnrollmentStatus, Target, Watchlist
@@ -48,6 +50,16 @@ class Embedder(Protocol):
     modality: str
 
     async def embed(self, crops: Sequence[Crop]) -> list[Embedding]: ...
+
+
+@runtime_checkable
+class FrameCodec(Protocol):
+    """Serialise an evidence frame for the blob store."""
+
+    extension: str
+    content_type: str
+
+    def encode(self, image: np.ndarray) -> bytes: ...
 
 
 @dataclass(frozen=True, slots=True)

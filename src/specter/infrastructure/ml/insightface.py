@@ -16,6 +16,7 @@ from specter.domain.quality import (
     RejectionReason,
     assess,
 )
+from specter.infrastructure.ml._insightface import load_face_app
 
 _SHARP_VAR = 500.0  # Laplacian variance at/above which an image counts as sharp
 
@@ -40,11 +41,7 @@ class InsightFaceEmbeddingService:
 
     def _face_app(self) -> Any:
         if self._app is None:
-            from insightface.app import FaceAnalysis  # pylint: disable=import-outside-toplevel
-
-            app = FaceAnalysis(name=self._model_name, providers=self._providers)
-            app.prepare(ctx_id=0, det_size=self._det_size)
-            self._app = app
+            self._app = load_face_app(self._model_name, self._providers, self._det_size)
         return self._app
 
     def _embed_sync(self, image: bytes) -> ReferenceEmbedding:

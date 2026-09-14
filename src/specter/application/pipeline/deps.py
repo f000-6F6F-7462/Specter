@@ -13,6 +13,7 @@ from specter.application.ports import (
     Detector,
     Embedder,
     EventBus,
+    FrameCodec,
     FrameSourceFactory,
     Tracker,
     UnitOfWorkFactory,
@@ -57,4 +58,5 @@ class PipelineDeps:
     blob: BlobStore
     bus: EventBus
     clock: Clock
+    codec: FrameCodec
     tuning: PipelineTuning = field(default_factory=PipelineTuning)

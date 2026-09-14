@@ -20,6 +20,7 @@ def make_settings(**overrides: Any) -> Settings:
             "detector": {"impl": "fake"},
             "embedders": {"face": {"impl": "fake"}},
         },
+        "pipeline": {"evidence_format": "npy"},
     }
     base.update(overrides)
     return Settings(**base)

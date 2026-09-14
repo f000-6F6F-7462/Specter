@@ -18,6 +18,7 @@ from specter.infrastructure.db import (
     create_engine,
     session_factory,
 )
+from specter.infrastructure.media.codec import NumpyFrameCodec
 from specter.infrastructure.media.fakes import SyntheticFrameSource
 from specter.infrastructure.ml.detector import FakeDetector
 from specter.infrastructure.ml.embedder import FakeEmbedder
@@ -60,6 +61,7 @@ async def env() -> AsyncIterator[tuple[UowFactory, PipelineDeps, MemoryBus]]:
         blob=MemoryBlobStore(),
         bus=bus,
         clock=FrozenClock(),
+        codec=NumpyFrameCodec(),
         tuning=PipelineTuning(directory_refresh_s=1e9),
     )
     yield uow_factory, deps, bus

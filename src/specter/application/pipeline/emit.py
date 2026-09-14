@@ -5,8 +5,6 @@ The domain builds the rich in-process ``MatchEvent``; this module is the only pl
 knows the wire contract and the blob store.
 """
 
-import io
-
 import numpy as np
 
 from specter.application.pipeline.deps import PipelineDeps
@@ -65,7 +63,7 @@ async def emit_match(
         detection_class=track.detection.cls,
         detection_confidence=_clamp01(track.detection.confidence),
         bbox=track.detection.bbox,
-        frame_ts=now,
+        frame_ts=frame.captured_at or now,
         frame_id=frame.seq,
         track_id=track.track_id,
         correlation_id=f"{stream.id}:{track.track_id}",
@@ -84,12 +82,14 @@ async def emit_match(
 async def _capture_evidence(
     deps: PipelineDeps, stream: StreamConfig, event_id: str, frame: Frame, track: Track
 ) -> MatchEvidence:
+    codec = deps.codec
     base = f"evidence/{stream.owner_id}/{event_id}"
-    snapshot_key, crop_key = f"{base}/snapshot.npy", f"{base}/crop.npy"
+    snapshot_key = f"{base}/snapshot{codec.extension}"
+    crop_key = f"{base}/crop{codec.extension}"
     box = track.detection.bbox.clip(frame.image.shape[1], frame.image.shape[0])
     patch = np.ascontiguousarray(frame.image[box.y : box.y + box.h, box.x : box.x + box.w])
-    await deps.blob.put(snapshot_key, _npy(frame.image), "application/x-npy")
-    await deps.blob.put(crop_key, _npy(patch), "application/x-npy")
+    await deps.blob.put(snapshot_key, codec.encode(frame.image), codec.content_type)
+    await deps.blob.put(crop_key, codec.encode(patch), codec.content_type)
     return MatchEvidence(snapshot_key=snapshot_key, crop_key=crop_key)
 
 
@@ -141,12 +141,6 @@ async def _url(deps: PipelineDeps, key: str | None) -> str | None:
 
 def _bbox_model(box: BBox) -> BBoxModel:
     return BBoxModel(x=box.x, y=box.y, w=box.w, h=box.h, norm=False)
-
-
-def _npy(arr: np.ndarray) -> bytes:
-    buf = io.BytesIO()
-    np.save(buf, arr)
-    return buf.getvalue()
 
 
 def _clamp01(value: float) -> float:
