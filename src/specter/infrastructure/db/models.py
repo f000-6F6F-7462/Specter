@@ -35,6 +35,7 @@ class WatchlistRow(Base):
     type: Mapped[str] = mapped_column(String(32))
     kind: Mapped[str] = mapped_column(String(32))
     match_threshold: Mapped[float] = mapped_column(Float)
+    meta: Mapped[Json] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(_TS, default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(_TS, default=None)
 
@@ -87,7 +88,8 @@ class StreamRow(Base):
     protocol: Mapped[str] = mapped_column(String(16))
     url: Mapped[str] = mapped_column(String(1024))
     transport: Mapped[str] = mapped_column(String(8), default="tcp")
-    # Phase 6 encrypts this at rest (Fernet); stored as JSON {username, password} for now.
+    # Fernet-encrypted JSON {username, password}; see core/crypto.py. Stored as
+    # {"token": "<fernet-token>"} so the column type/shape never has to change.
     credentials: Mapped[Json | None] = mapped_column(JSON, default=None)
     sampling: Mapped[Json] = mapped_column(JSON, default=dict)
     roi: Mapped[JsonList] = mapped_column(JSON, default=list)

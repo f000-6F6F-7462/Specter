@@ -9,7 +9,13 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
 
-from specter.application.ports import BlobStore, EventBus, HealthStore, UnitOfWorkFactory
+from specter.application.ports import (
+    BlobStore,
+    EventBus,
+    FrameCodec,
+    HealthStore,
+    UnitOfWorkFactory,
+)
 from specter.core.di import Container
 
 
@@ -55,8 +61,13 @@ def get_health(container: ContainerDep) -> HealthStore:
     return container.health
 
 
+def get_codec(container: ContainerDep) -> FrameCodec:
+    return container.codec
+
+
 OwnerDep = Annotated[str, Depends(require_owner)]
 UowDep = Annotated[UnitOfWorkFactory, Depends(get_uow_factory)]
 BlobDep = Annotated[BlobStore, Depends(get_blob)]
 BusDep = Annotated[EventBus, Depends(get_bus)]
 HealthDep = Annotated[HealthStore, Depends(get_health)]
+CodecDep = Annotated[FrameCodec, Depends(get_codec)]

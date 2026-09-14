@@ -69,8 +69,12 @@ class InsightFaceEmbeddingService:
 def _measure_quality(frame: Any, face: Any) -> QualityReport:
     import cv2  # pylint: disable=import-outside-toplevel
 
-    y1, y2 = int(face.bbox[1]), int(face.bbox[3])
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = (int(v) for v in face.bbox[:4])
+    x1, y1 = max(x1, 0), max(y1, 0)
+    x2, y2 = min(x2, w), min(y2, h)
+    crop = frame[y1:y2, x1:x2] if x2 > x1 and y2 > y1 else frame
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     laplacian_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
     blur = max(0.0, 1.0 - min(laplacian_var / _SHARP_VAR, 1.0))
     pose = getattr(face, "pose", None)

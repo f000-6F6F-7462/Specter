@@ -37,7 +37,7 @@ class QualityThresholds:
     max_brightness: float = 0.9
 
 
-ENROLLMENT_THRESHOLDS = QualityThresholds()
+ENROLLMENT_THRESHOLDS = QualityThresholds(max_blur=0.85)
 RUNTIME_THRESHOLDS = QualityThresholds(
     min_score=0.4, max_blur=0.75, min_face_px=32, max_yaw_deg=55.0
 )

@@ -71,11 +71,13 @@ class Container:
     ``main()``"""
 
 
-def _build_blob(settings: Settings) -> BlobStore:
+def _build_blob(settings: Settings, lifecycle: list[AbstractAsyncContextManager[Any]]) -> BlobStore:
     if settings.blob == "minio":
         from specter.infrastructure.blob.minio import MinioBlobStore
 
-        return MinioBlobStore(settings.s3)
+        store = MinioBlobStore(settings.s3)
+        lifecycle.append(store)  # __aenter__ ensures the bucket exists once, up front
+        return store
     return MemoryBlobStore()
 
 
@@ -96,11 +98,15 @@ def _build_health(settings: Settings, clock: Clock) -> HealthStore:
     return InMemoryHealthStore(clock)
 
 
-def _build_vectors(settings: Settings) -> VectorIndex:
+def _build_vectors(
+    settings: Settings, lifecycle: list[AbstractAsyncContextManager[Any]]
+) -> VectorIndex:
     if settings.vectors == "qdrant":
         from specter.infrastructure.vectors.qdrant import QdrantVectorIndex
 
-        return QdrantVectorIndex(settings.qdrant.url)
+        index = QdrantVectorIndex(settings.qdrant.url)
+        lifecycle.append(index)  # __aenter__ ensures the collections exist once, up front
+        return index
     return InMemoryVectorIndex()
 
 
@@ -128,8 +134,22 @@ def _build_frame_source_factory(settings: Settings) -> FrameSourceFactory:
             return GStreamerFrameSource(stream.id, stream.source)
 
         return gstreamer
+    if settings.media == "pyav":
+        from specter.infrastructure.media.pyav import PyAvFrameSource
+
+        def pyav(stream: StreamConfig) -> FrameSource:
+            return PyAvFrameSource(stream.id, stream.source)
+
+        return pyav
+    if settings.media == "webrtc":
+        from specter.infrastructure.media.webrtc import WebRtcFrameSource
+
+        def webrtc(stream: StreamConfig) -> FrameSource:
+            return WebRtcFrameSource(stream.id, stream.source)
+
+        return webrtc
     raise ConfigurationError(
-        f"unknown media source {settings.media!r} — use 'gstreamer' or 'synthetic'"
+        f"unknown media source {settings.media!r} — use 'gstreamer', 'pyav', or 'webrtc'"
     )
 
 
@@ -148,7 +168,27 @@ def _build_detector(
         )
         lifecycle.append(batched)
         return batched
-    raise ConfigurationError(f"unknown detector impl {cfg.impl!r} — use 'yolo' or 'fake'")
+    if cfg.impl == "onnx":
+        from specter.infrastructure.ml.inference_service import BatchedDetector
+        from specter.infrastructure.ml.onnx_detector import OnnxDetector
+
+        batched = BatchedDetector(
+            OnnxDetector(cfg), max_batch=cfg.max_batch, max_delay_ms=cfg.max_delay_ms
+        )
+        lifecycle.append(batched)
+        return batched
+    raise ConfigurationError(f"unknown detector impl {cfg.impl!r} — use 'yolo', 'onnx' or 'fake'")
+
+
+def _build_tracker(settings: Settings) -> Tracker:
+    impl = settings.models.tracker.impl
+    if impl == "iou":
+        return IouTracker()
+    if impl == "bytetrack":
+        from specter.infrastructure.ml.bytetrack import ByteTrackAdapter
+
+        return ByteTrackAdapter()
+    raise ConfigurationError(f"unknown tracker impl {impl!r} — use 'iou' or 'bytetrack'")
 
 
 def _build_embedders(
@@ -169,10 +209,28 @@ def _build_embedders(
             )
             lifecycle.append(batched)
             embedders[modality] = batched
+        elif cfg.impl == "osnet":
+            from specter.infrastructure.ml.inference_service import BatchedEmbedder
+            from specter.infrastructure.ml.person_embedder import PersonEmbedder
+
+            if not cfg.weights:
+                raise ConfigurationError(
+                    f"embedder {modality!r} (impl='osnet') needs 'weights' set to a "
+                    "local OSNet .pth checkpoint"
+                )
+            batched = BatchedEmbedder(
+                PersonEmbedder(
+                    weights=cfg.weights, variant=cfg.name or "osnet_x1_0", device=cfg.device
+                ),
+                max_batch=cfg.max_batch,
+                max_delay_ms=cfg.max_delay_ms,
+            )
+            lifecycle.append(batched)
+            embedders[modality] = batched
         else:
             raise ConfigurationError(
                 f"unknown embedder impl {cfg.impl!r} for {modality!r} — "
-                f"use 'insightface' or 'fake'"
+                f"use 'insightface', 'osnet' or 'fake'"
             )
     return embedders
 
@@ -217,22 +275,24 @@ def build_container(settings: Settings | None = None) -> Container:
     clock = SystemClock()
     lifecycle: list[AbstractAsyncContextManager[Any]] = []
 
+    stream_secret_key = settings.security.secret_key.get_secret_value()
+
     def uow_factory() -> UnitOfWork:
-        return SqlAlchemyUnitOfWork(sessions)
+        return SqlAlchemyUnitOfWork(sessions, stream_secret_key)
 
     return Container(
         settings=settings,
         clock=clock,
         engine=engine,
         uow_factory=uow_factory,
-        blob=_build_blob(settings),
+        blob=_build_blob(settings, lifecycle),
         bus=_build_bus(settings),
         health=_build_health(settings, clock),
-        vectors=_build_vectors(settings),
+        vectors=_build_vectors(settings, lifecycle),
         faces=_build_faces(settings),
         frame_source_factory=_build_frame_source_factory(settings),
         detector=_build_detector(settings, lifecycle),
-        tracker=IouTracker(),
+        tracker=_build_tracker(settings),
         embedders=_build_embedders(settings, lifecycle),
         codec=_build_codec(settings),
         pipeline_tuning=_pipeline_tuning(settings),

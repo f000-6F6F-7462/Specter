@@ -88,6 +88,13 @@ class RegionOfInterest:
             raise RuleViolation("roi extends past the frame")
 
 
+def preview_key(owner_id: str, stream_id: str, extension: str) -> str:
+    """The single, overwritten-in-place blob key a running stream's latest frame is
+    written to — shared by the pipeline (writer) and the `/preview` endpoint (reader)
+    so the two never drift apart."""
+    return f"previews/{owner_id}/{stream_id}/latest{extension}"
+
+
 @dataclass(slots=True)
 class StreamConfig:
     id: str

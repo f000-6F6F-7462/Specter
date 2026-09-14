@@ -10,7 +10,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from specter.core.settings import DetectorSettings
-from specter.domain.vision import BBox, Detection, Frame
+from specter.domain.vision import Detection, Frame
+from specter.infrastructure.ml._ultralytics_common import detections_from_result, overrides
 
 
 class YoloDetector:
@@ -43,31 +44,8 @@ class YoloDetector:
         from every concurrently-running stream into one call."""
         model = self._load()
         results = model.predict(
-            [frame.image for frame in frames], verbose=False, **self._overrides()
+            [frame.image for frame in frames],
+            verbose=False,
+            **overrides(self._conf, self._iou),
         )
-        return [self._to_detections(result) for result in results]
-
-    def _overrides(self) -> dict[str, float]:
-        """Only the thresholds someone actually set — omitted keys keep the model's own
-        defaults instead of us guessing at a copy of them."""
-        overrides = {"conf": self._conf, "iou": self._iou}
-        return {name: value for name, value in overrides.items() if value is not None}
-
-    def _to_detections(self, result: Any) -> list[Detection]:
-        boxes = getattr(result, "boxes", None)
-        if boxes is None:
-            return []
-        names = result.names
-        detections: list[Detection] = []
-        for xyxy, conf, cls_id in zip(
-            boxes.xyxy.tolist(), boxes.conf.tolist(), boxes.cls.tolist(), strict=True
-        ):
-            x1, y1, x2, y2 = (int(round(v)) for v in xyxy)
-            detections.append(
-                Detection(
-                    cls=str(names[int(cls_id)]),
-                    confidence=float(conf),
-                    bbox=BBox(x=x1, y=y1, w=max(x2 - x1, 1), h=max(y2 - y1, 1)),
-                )
-            )
-        return detections
+        return [detections_from_result(result) for result in results]

@@ -118,31 +118,40 @@ class SqlAlchemyTargetRepo:
 
 
 class SqlAlchemyStreamRepo:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self, session: AsyncSession, secret_key: str = "dev-only-fernet-key-change-me"
+    ) -> None:
         self._s = session
+        self._secret_key = secret_key
 
     async def get(self, stream_id: str) -> StreamConfig | None:
         row = await self._s.get(StreamRow, stream_id)
-        return mappers.stream_to_domain(row) if row is not None else None
+        return mappers.stream_to_domain(row, self._secret_key) if row is not None else None
 
     async def list_for_owner(self, owner_id: str) -> list[StreamConfig]:
         stmt = (
             select(StreamRow).where(StreamRow.owner_id == owner_id).order_by(StreamRow.created_at)
         )
-        return [mappers.stream_to_domain(r) for r in (await self._s.scalars(stmt)).all()]
+        return [
+            mappers.stream_to_domain(r, self._secret_key)
+            for r in (await self._s.scalars(stmt)).all()
+        ]
 
     async def list_enabled(self) -> list[StreamConfig]:
         stmt = select(StreamRow).where(StreamRow.enabled.is_(True))
-        return [mappers.stream_to_domain(r) for r in (await self._s.scalars(stmt)).all()]
+        return [
+            mappers.stream_to_domain(r, self._secret_key)
+            for r in (await self._s.scalars(stmt)).all()
+        ]
 
     async def add(self, stream: StreamConfig) -> None:
-        self._s.add(mappers.stream_to_row(stream))
+        self._s.add(mappers.stream_to_row(stream, self._secret_key))
 
     async def update(self, stream: StreamConfig) -> None:
         row = await self._s.get(StreamRow, stream.id)
         if row is None:
             raise NotFoundError(f"stream {stream.id}")
-        mappers.apply_stream(row, stream)
+        mappers.apply_stream(row, stream, self._secret_key)
 
     async def delete(self, stream_id: str) -> None:
         row = await self._s.get(StreamRow, stream_id)

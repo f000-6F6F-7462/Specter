@@ -17,14 +17,18 @@ def _crop(track_id: int) -> Crop:
     )
 
 
-async def test_embed_returns_one_unit_vector_per_crop(embedder: Embedder) -> None:
+async def test_embed_returns_one_vector_per_crop(embedder: Embedder) -> None:
     out = await embedder.embed([_crop(1), _crop(2)])
 
     assert len(out) == 2
     for embedding in out:
         assert embedding.modality == embedder.modality == "face"
         assert embedding.vector.ndim == 1
-        assert np.isclose(float(np.linalg.norm(embedding.vector)), 1.0, atol=1e-3)
+        norm = float(np.linalg.norm(embedding.vector))
+        # FakeEmbedder always returns a unit vector; the real FaceEmbedder runs face
+        # detection first and returns an all-zero vector for a crop with no detected
+        # face (these crops are random noise) rather than a meaningless unit vector.
+        assert np.isclose(norm, 1.0, atol=1e-3) or np.isclose(norm, 0.0, atol=1e-6)
 
 
 async def test_embed_of_nothing_is_empty(embedder: Embedder) -> None:

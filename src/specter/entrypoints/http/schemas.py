@@ -1,5 +1,6 @@
 """Pydantic request/response models for the REST API."""
 
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
@@ -13,7 +14,9 @@ from specter.application.catalog import (
     TargetView,
     WatchlistView,
 )
+from specter.application.ports import BlobStore
 from specter.application.streams import StreamView
+from specter.core.errors import NotFoundError
 from specter.domain.alerts import Disposition
 from specter.domain.catalog import EnrollmentStatus, ImageStatus, TargetType, WatchlistKind
 from specter.domain.streams import (
@@ -38,11 +41,13 @@ class WatchlistCreate(BaseModel):
     type: TargetType
     kind: WatchlistKind = WatchlistKind.WATCHLIST
     match_threshold: float = Field(default=0.78, ge=0.0, le=1.0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class WatchlistUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     match_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    metadata: dict[str, Any] | None = None
 
 
 class WatchlistOut(_Out):
@@ -52,6 +57,7 @@ class WatchlistOut(_Out):
     type: TargetType
     kind: WatchlistKind
     match_threshold: float
+    metadata: dict[str, Any]
     target_count: int
 
     @classmethod
@@ -92,7 +98,7 @@ class ReferenceImageOut(_Out):
             status=view.status,
             rejection_reason=view.rejection_reason.value if view.rejection_reason else None,
             model_version=view.model_version,
-            quality=view.quality.__dict__ if view.quality else None,
+            quality=asdict(view.quality) if view.quality else None,
         )
 
 
@@ -196,7 +202,10 @@ class AlertOut(BaseModel):
     note: str | None
 
     @classmethod
-    def of(cls, view: AlertView) -> "AlertOut":
+    async def of(cls, view: AlertView, blob: BlobStore) -> "AlertOut":
+        """``snapshot_url``/``crop_url`` are presigned here, per request — they expire,
+        so a late consumer re-fetching ``GET /alerts/{id}`` always gets a fresh link
+        rather than a stored one going stale."""
         return cls(
             id=view.id,
             owner_id=view.owner_id,
@@ -209,12 +218,23 @@ class AlertOut(BaseModel):
             track_id=view.track_id,
             frame_ts=view.frame_ts,
             created_at=view.created_at,
-            snapshot_url=view.evidence.snapshot_key,
-            crop_url=view.evidence.crop_key,
+            snapshot_url=await _presign(blob, view.evidence.snapshot_key),
+            crop_url=await _presign(blob, view.evidence.crop_key),
             disposition=view.disposition,
             acknowledged=view.acknowledged,
             note=view.note,
         )
+
+
+async def _presign(blob: BlobStore, key: str | None) -> str | None:
+    """Best-effort: evidence that never made it to the blob store (a write failure,
+    an expired/cleaned-up object) shouldn't take the whole alert lookup down with it."""
+    if not key:
+        return None
+    try:
+        return await blob.presigned_url(key)
+    except NotFoundError:
+        return None
 
 
 class AlertPageOut(BaseModel):
@@ -222,8 +242,9 @@ class AlertPageOut(BaseModel):
     next_cursor: str | None
 
     @classmethod
-    def of(cls, page: AlertPage) -> "AlertPageOut":
-        return cls(items=[AlertOut.of(a) for a in page.items], next_cursor=page.next_cursor)
+    async def of(cls, page: AlertPage, blob: BlobStore) -> "AlertPageOut":
+        items = [await AlertOut.of(a, blob) for a in page.items]
+        return cls(items=items, next_cursor=page.next_cursor)
 
 
 class ResolveIn(BaseModel):
@@ -279,6 +300,10 @@ class StreamUpdate(BaseModel):
 
 class StreamStateIn(BaseModel):
     running: bool
+
+
+class PreviewOut(BaseModel):
+    snapshot_url: str
 
 
 class SamplingOut(BaseModel):

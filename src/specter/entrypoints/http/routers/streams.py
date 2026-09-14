@@ -1,8 +1,10 @@
 from fastapi import APIRouter, status
 
 from specter.application import streams
-from specter.entrypoints.http.deps import HealthDep, OwnerDep, UowDep
+from specter.domain.streams import preview_key
+from specter.entrypoints.http.deps import BlobDep, CodecDep, HealthDep, OwnerDep, UowDep
 from specter.entrypoints.http.schemas import (
+    PreviewOut,
     StreamCreate,
     StreamOut,
     StreamStateIn,
@@ -108,3 +110,14 @@ async def set_stream_state(
 @router.delete("/streams/{stream_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_stream(stream_id: str, owner: OwnerDep, uow: UowDep) -> None:
     await streams.delete_stream(uow, owner, stream_id)
+
+
+@router.get("/streams/{stream_id}/preview")
+async def stream_preview(
+    stream_id: str, owner: OwnerDep, uow: UowDep, health: HealthDep, blob: BlobDep, codec: CodecDep
+) -> PreviewOut:
+    # 404s the same way as every other not-found here if the stream doesn't exist / isn't
+    # this owner's, or if it hasn't written a frame yet (never started, or just started).
+    await streams.get_stream(uow, health, owner, stream_id)
+    key = preview_key(owner, stream_id, codec.extension)
+    return PreviewOut(snapshot_url=await blob.presigned_url(key))

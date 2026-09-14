@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 
 from specter.application import alerts
 from specter.domain.alerts import Disposition
-from specter.entrypoints.http.deps import OwnerDep, UowDep
+from specter.entrypoints.http.deps import BlobDep, OwnerDep, UowDep
 from specter.entrypoints.http.schemas import AlertOut, AlertPageOut, ResolveIn
 
 router = APIRouter(tags=["alerts"])
@@ -15,6 +15,7 @@ router = APIRouter(tags=["alerts"])
 async def list_alerts(
     owner: OwnerDep,
     uow: UowDep,
+    blob: BlobDep,
     stream_id: str | None = None,
     watchlist_id: str | None = None,
     disposition: Disposition | None = None,
@@ -38,20 +39,22 @@ async def list_alerts(
             cursor=cursor,
         ),
     )
-    return AlertPageOut.of(page)
+    return await AlertPageOut.of(page, blob)
 
 
 @router.get("/alerts/{alert_id}")
-async def get_alert(alert_id: str, owner: OwnerDep, uow: UowDep) -> AlertOut:
-    return AlertOut.of(await alerts.get_alert(uow, owner, alert_id))
+async def get_alert(alert_id: str, owner: OwnerDep, uow: UowDep, blob: BlobDep) -> AlertOut:
+    return await AlertOut.of(await alerts.get_alert(uow, owner, alert_id), blob)
 
 
 @router.post("/alerts/{alert_id}/ack")
-async def ack_alert(alert_id: str, owner: OwnerDep, uow: UowDep) -> AlertOut:
-    return AlertOut.of(await alerts.ack_alert(uow, owner, alert_id))
+async def ack_alert(alert_id: str, owner: OwnerDep, uow: UowDep, blob: BlobDep) -> AlertOut:
+    return await AlertOut.of(await alerts.ack_alert(uow, owner, alert_id), blob)
 
 
 @router.post("/alerts/{alert_id}/resolve")
-async def resolve_alert(alert_id: str, body: ResolveIn, owner: OwnerDep, uow: UowDep) -> AlertOut:
+async def resolve_alert(
+    alert_id: str, body: ResolveIn, owner: OwnerDep, uow: UowDep, blob: BlobDep
+) -> AlertOut:
     view = await alerts.resolve_alert(uow, owner, alert_id, body.disposition, body.note)
-    return AlertOut.of(view)
+    return await AlertOut.of(view, blob)

@@ -3,6 +3,7 @@
 Tables are managed by Alembic.
 """
 
+import contextlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -20,7 +21,10 @@ def create_app(container: Container | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
-        yield
+        async with contextlib.AsyncExitStack() as stack:
+            for adapter in container.lifecycle:
+                await stack.enter_async_context(adapter)
+            yield
         await container.engine.dispose()
 
     app = FastAPI(

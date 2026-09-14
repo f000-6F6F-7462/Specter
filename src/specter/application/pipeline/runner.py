@@ -26,7 +26,7 @@ from specter.contracts import EVENTS_STREAM_STATUS, StreamStatusMessage
 from specter.core.clock import Clock
 from specter.core.ids import new_id
 from specter.domain.matching import Candidate, NofMPolicy, TrackMatchState
-from specter.domain.streams import StreamConfig, StreamHealth, StreamStatus
+from specter.domain.streams import StreamConfig, StreamHealth, StreamStatus, preview_key
 from specter.domain.vision import Frame, Track
 
 log = logging.getLogger(__name__)
@@ -190,6 +190,7 @@ async def run_stream(
             if vitals.due(deps.tuning.health_publish_interval_s):
                 health = await _write_health(deps, stream, current_status, metrics, vitals)
                 sampler.adjust_for_latency(health.inference_p95_ms)
+                await _write_preview(deps, stream, frame)
         if stop.is_set():
             reason = "stopped"
     except asyncio.CancelledError:
@@ -271,6 +272,7 @@ async def _process_frame(
     detections = filter_detections(
         (await deps.detector.detect([frame]))[0],
         stream,
+        frame,
         min_confidence=deps.tuning.min_detection_confidence,
     )
     tracks = deps.tracker.update(stream.id, detections)
@@ -308,6 +310,17 @@ async def _decide(
     state = matcher.states.setdefault((track.track_id, modality), TrackMatchState())
     policy = matcher.policy_for(resolved, _fallback_policy(deps))
     decision = policy.evaluate(state, hit, deps.clock.now())
+    log.debug(
+        "stream %s track %s [%s]: best_similarity=%.3f threshold=%.3f fire=%s "
+        "(closest candidate: %s)",
+        stream.id,
+        track.track_id,
+        modality,
+        decision.similarity,
+        policy.threshold,
+        decision.fire,
+        candidates[0].target_id if candidates else "none",
+    )
     if not (decision.fire and resolved is not None):
         return
 
@@ -387,6 +400,13 @@ async def _write_health(
     health = vitals.snapshot(status, metrics, last_error=last_error)
     await deps.health.set_health(stream.id, health, ttl_s=deps.tuning.health_ttl_s)
     return health
+
+
+async def _write_preview(deps: PipelineDeps, stream: StreamConfig, frame: Frame) -> None:
+    """Overwrite the single ``preview_key`` blob with the latest frame, on the same
+    cadence as the health tick — `GET /streams/{id}/preview` reads it back presigned."""
+    key = preview_key(stream.owner_id, stream.id, deps.codec.extension)
+    await deps.blob.put(key, deps.codec.encode(frame.image), deps.codec.content_type)
 
 
 async def _snapshot_versions(deps: PipelineDeps, directory: StreamDirectory) -> dict[str, int]:

@@ -27,12 +27,14 @@ class CreateWatchlistRequest:
     type: TargetType
     kind: WatchlistKind = WatchlistKind.WATCHLIST
     match_threshold: float = 0.78
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class UpdateWatchlistRequest:
     name: str | None = None
     match_threshold: float | None = None
+    metadata: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +45,7 @@ class WatchlistView:
     type: TargetType
     kind: WatchlistKind
     match_threshold: float
+    metadata: dict[str, object]
     target_count: int
 
     @classmethod
@@ -54,6 +57,7 @@ class WatchlistView:
             type=wl.type,
             kind=wl.kind,
             match_threshold=wl.match_threshold,
+            metadata=dict(wl.metadata),
             target_count=target_count,
         )
 

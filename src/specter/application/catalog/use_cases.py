@@ -82,6 +82,7 @@ async def create_watchlist(
         type=req.type,
         kind=req.kind,
         match_threshold=req.match_threshold,
+        metadata=dict(req.metadata),
     )
     async with uow_factory() as uow:
         await uow.watchlists.add(watchlist)
@@ -119,6 +120,8 @@ async def update_watchlist(
             watchlist.rename(req.name)
         if req.match_threshold is not None:
             watchlist.set_threshold(req.match_threshold)
+        if req.metadata is not None:
+            watchlist.metadata = dict(req.metadata)
         await uow.watchlists.update(watchlist)
         count = await uow.targets.count_for_watchlist(watchlist_id)
     # A running stream polls this to notice the edit without waiting out

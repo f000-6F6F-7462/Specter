@@ -1,0 +1,27 @@
+repos:
+  - repo: local
+    hooks:
+      - id: isort
+        name: isort
+        entry: .venv/bin/python -m isort src tests alembic
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: black
+        name: black
+        entry: .venv/bin/python -m black src tests alembic
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: pylint
+        name: pylint
+        entry: .venv/bin/python -m pylint src
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: mypy
+        name: mypy
+        entry: .venv/bin/python -m mypy
+        language: system
+        types: [python]
+        pass_filenames: false

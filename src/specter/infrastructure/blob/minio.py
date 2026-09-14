@@ -63,3 +63,10 @@ class MinioBlobStore:
                 await client.head_bucket(Bucket=self._cfg.bucket)
             except ClientError:
                 await client.create_bucket(Bucket=self._cfg.bucket)
+
+    async def __aenter__(self) -> "MinioBlobStore":
+        await self.ensure_bucket()
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None

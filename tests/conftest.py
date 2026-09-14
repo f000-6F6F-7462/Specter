@@ -9,9 +9,12 @@ from specter.contracts import (
     BBoxModel,
     Dedup,
     DetectionInfo,
+    EnrollJobMessage,
+    EnrollmentStatusMessage,
     MatchEventMessage,
     MatchInfo,
     StreamRef,
+    StreamStatusMessage,
 )
 from specter.core.clock import FrozenClock
 from specter.domain.catalog import (
@@ -112,6 +115,50 @@ def make_match_event_message(**overrides: object) -> MatchEventMessage:
     return MatchEventMessage(**defaults)  # type: ignore[arg-type]
 
 
+def make_stream_status_message(**overrides: object) -> StreamStatusMessage:
+    defaults: dict[str, object] = {
+        "event_id": "evt_stream_status_0",
+        "owner_id": "o_9c1f",
+        "occurred_at": datetime(2026, 8, 31, 12, 34, 56, tzinfo=UTC),
+        "stream_id": "st_9",
+        "status": "running",
+        "detail": None,
+    }
+    defaults.update(overrides)
+    return StreamStatusMessage(**defaults)  # type: ignore[arg-type]
+
+
+def make_enrollment_status_message(**overrides: object) -> EnrollmentStatusMessage:
+    defaults: dict[str, object] = {
+        "event_id": "evt_enrollment_status_0",
+        "owner_id": "o_9c1f",
+        "occurred_at": datetime(2026, 8, 31, 12, 34, 56, tzinfo=UTC),
+        "batch_id": "bat_42",
+        "target_id": "tgt_42",
+        "image_id": "img_1",
+        "status": "embedded",
+        "quality_score": 0.91,
+        "rejection_reason": None,
+    }
+    defaults.update(overrides)
+    return EnrollmentStatusMessage(**defaults)  # type: ignore[arg-type]
+
+
+def make_enroll_job_message(**overrides: object) -> EnrollJobMessage:
+    defaults: dict[str, object] = {
+        "event_id": "evt_enroll_job_0",
+        "owner_id": "o_9c1f",
+        "occurred_at": datetime(2026, 8, 31, 12, 34, 56, tzinfo=UTC),
+        "batch_id": "bat_42",
+        "target_id": "tgt_42",
+        "image_id": "img_1",
+        "blob_key": "blobs/o_9c1f/reference/2026/08/img_1.jpg",
+        "modality": "face",
+    }
+    defaults.update(overrides)
+    return EnrollJobMessage(**defaults)  # type: ignore[arg-type]
+
+
 __all__ = [
     "BBox",
     "make_watchlist",
@@ -120,4 +167,7 @@ __all__ = [
     "make_candidate",
     "fresh_state",
     "make_match_event_message",
+    "make_stream_status_message",
+    "make_enrollment_status_message",
+    "make_enroll_job_message",
 ]
