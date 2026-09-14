@@ -1,8 +1,12 @@
 """Catalog use cases.
 
-Each is a plain async function: dependencies first (``uow_factory``, then ``blob`` when
-needed), then the request. One call == one Unit of Work == one transaction. Cross-owner
-access is denied by comparing ``owner_id`` on every read.
+Each is a plain async function: dependencies first (``uow_factory``, then ``blob``/
+``bus``/``health`` when needed), then the request. One call == one Unit of Work == one
+transaction. Cross-owner access is denied by comparing ``owner_id`` on every read.
+
+Mutations that change what a running stream matches against (watchlist threshold/
+rename, delete, target enable/disable/rename, delete) bump that watchlist's version in
+``HealthStore`` — see ``application.pipeline.runner`` for the reader side.
 """
 
 from datetime import UTC, datetime
@@ -21,7 +25,13 @@ from specter.application.catalog.dto import (
     UploadedImage,
     WatchlistView,
 )
-from specter.application.ports import BlobStore, EventBus, UnitOfWork, UnitOfWorkFactory
+from specter.application.ports import (
+    BlobStore,
+    EventBus,
+    HealthStore,
+    UnitOfWork,
+    UnitOfWorkFactory,
+)
 from specter.contracts import EnrollJobMessage
 from specter.contracts.streams import JOBS_ENROLL
 from specter.core.errors import NotFoundError, RuleViolation
@@ -98,6 +108,7 @@ async def get_watchlist(
 
 async def update_watchlist(
     uow_factory: UnitOfWorkFactory,
+    health: HealthStore,
     owner_id: str,
     watchlist_id: str,
     req: UpdateWatchlistRequest,
@@ -110,15 +121,19 @@ async def update_watchlist(
             watchlist.set_threshold(req.match_threshold)
         await uow.watchlists.update(watchlist)
         count = await uow.targets.count_for_watchlist(watchlist_id)
+    # A running stream polls this to notice the edit without waiting out
+    # directory_refresh_s — see StreamDirectory / run_stream.
+    await health.bump_watchlist_version(watchlist_id)
     return WatchlistView.of(watchlist, target_count=count)
 
 
 async def delete_watchlist(
-    uow_factory: UnitOfWorkFactory, owner_id: str, watchlist_id: str
+    uow_factory: UnitOfWorkFactory, health: HealthStore, owner_id: str, watchlist_id: str
 ) -> None:
     async with uow_factory() as uow:
         await _load_watchlist(uow, owner_id, watchlist_id)
         await uow.watchlists.soft_delete(watchlist_id)
+    await health.bump_watchlist_version(watchlist_id)
 
 
 #  targets
@@ -226,6 +241,7 @@ async def get_target(uow_factory: UnitOfWorkFactory, owner_id: str, target_id: s
 
 async def update_target(
     uow_factory: UnitOfWorkFactory,
+    health: HealthStore,
     owner_id: str,
     target_id: str,
     req: UpdateTargetRequest,
@@ -239,17 +255,22 @@ async def update_target(
         if req.metadata is not None:
             target.metadata = dict(req.metadata)
         await uow.targets.update(target)
+    await health.bump_watchlist_version(target.watchlist_id)
     return TargetView.of(target)
 
 
-async def delete_target(uow_factory: UnitOfWorkFactory, owner_id: str, target_id: str) -> None:
+async def delete_target(
+    uow_factory: UnitOfWorkFactory, health: HealthStore, owner_id: str, target_id: str
+) -> None:
     async with uow_factory() as uow:
-        await _load_target(uow, owner_id, target_id)
+        target = await _load_target(uow, owner_id, target_id)
         await uow.targets.soft_delete(target_id)
+    await health.bump_watchlist_version(target.watchlist_id)
 
 
 async def batch_delete_targets(
     uow_factory: UnitOfWorkFactory,
+    health: HealthStore,
     owner_id: str,
     watchlist_id: str,
     target_ids: list[str],
@@ -263,6 +284,8 @@ async def batch_delete_targets(
                 continue
             await uow.targets.soft_delete(target_id)
             deleted += 1
+    if deleted:
+        await health.bump_watchlist_version(watchlist_id)
     return deleted
 
 

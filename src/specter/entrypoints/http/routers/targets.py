@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from specter.application import catalog
 from specter.core.errors import RuleViolation
 from specter.domain.catalog import EnrollmentStatus
-from specter.entrypoints.http.deps import BlobDep, BusDep, OwnerDep, UowDep
+from specter.entrypoints.http.deps import BlobDep, BusDep, HealthDep, OwnerDep, UowDep
 from specter.entrypoints.http.schemas import (
     BatchDeleteOut,
     EnrollmentBatchOut,
@@ -91,10 +91,11 @@ async def batch_delete_targets(
     watchlist_id: str,
     owner: OwnerDep,
     uow: UowDep,
+    health: HealthDep,
     ids: Annotated[str, Query(description="comma-separated target ids")],
 ) -> BatchDeleteOut:
     target_ids = [tid for tid in (part.strip() for part in ids.split(",")) if tid]
-    deleted = await catalog.batch_delete_targets(uow, owner, watchlist_id, target_ids)
+    deleted = await catalog.batch_delete_targets(uow, health, owner, watchlist_id, target_ids)
     return BatchDeleteOut(deleted=deleted)
 
 
@@ -105,10 +106,11 @@ async def get_target(target_id: str, owner: OwnerDep, uow: UowDep) -> TargetOut:
 
 @router.patch("/targets/{target_id}")
 async def update_target(
-    target_id: str, body: TargetUpdate, owner: OwnerDep, uow: UowDep
+    target_id: str, body: TargetUpdate, owner: OwnerDep, uow: UowDep, health: HealthDep
 ) -> TargetOut:
     view = await catalog.update_target(
         uow,
+        health,
         owner,
         target_id,
         catalog.UpdateTargetRequest(label=body.label, enabled=body.enabled, metadata=body.metadata),
@@ -117,8 +119,8 @@ async def update_target(
 
 
 @router.delete("/targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_target(target_id: str, owner: OwnerDep, uow: UowDep) -> None:
-    await catalog.delete_target(uow, owner, target_id)
+async def delete_target(target_id: str, owner: OwnerDep, uow: UowDep, health: HealthDep) -> None:
+    await catalog.delete_target(uow, health, owner, target_id)
 
 
 @router.post("/targets/{target_id}/images")

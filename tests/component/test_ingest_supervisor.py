@@ -2,14 +2,15 @@
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
+from dataclasses import replace
 
 import pytest
 
 from specter.application.pipeline import PipelineDeps, PipelineTuning
 from specter.contracts import EVENTS_STREAM_STATUS, StreamStatusMessage
-from specter.core.clock import FrozenClock
+from specter.core.clock import FrozenClock, SystemClock
 from specter.domain.streams import SamplingConfig, StreamConfig, StreamProtocol, StreamSource
-from specter.entrypoints.workers.ingest_worker import supervise
+from specter.entrypoints.workers.ingest_worker import _Run, _Supervisor, supervise
 from specter.infrastructure.blob.memory import MemoryBlobStore
 from specter.infrastructure.bus.memory import MemoryBus
 from specter.infrastructure.db import (
@@ -122,3 +123,71 @@ async def test_flipping_desired_state_starts_the_pipeline(
 
     stop.set()
     await asyncio.wait_for(task, timeout=5)
+
+
+async def test_reconnect_count_climbs_across_crashes_and_reaches_health(
+    env: tuple[UowFactory, PipelineDeps, MemoryBus],
+) -> None:
+    uow_factory, deps, _bus = env
+    # A real clock, not the fixture's FrozenClock — the supervisor's crash backoff is
+    # real wall-clock time (matched by the real asyncio.sleep below), and a frozen clock
+    # would never advance past the cooldown it set, so the stream would crash once and
+    # then sit "in cooldown" forever.
+    real_clock = SystemClock()
+    crashy = replace(
+        deps,
+        frame_source_factory=lambda s: SyntheticFrameSource(
+            s.id, count=None, fps=200.0, fail_after=2
+        ),
+        clock=real_clock,
+        health=InMemoryHealthStore(real_clock),
+    )
+    async with uow_factory() as uow:
+        await uow.streams.add(_stream("stream_crash", running=True))
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        supervise(crashy, uow_factory, stop=stop, poll_s=0.02, backoff_s=0.05)
+    )
+    await asyncio.sleep(0.6)  # several crash -> backoff -> restart cycles
+
+    health = await crashy.health.get_health("stream_crash")
+    assert health is not None
+    assert health.reconnect_count >= 1
+
+    stop.set()
+    await asyncio.wait_for(task, timeout=5)
+
+
+async def test_reap_tracks_reconnects_and_a_deliberate_stop_clears_them(
+    env: tuple[UowFactory, PipelineDeps, MemoryBus],
+) -> None:
+    """Exercises _Supervisor's bookkeeping directly — deterministic, no real sleeps."""
+    uow_factory, deps, _bus = env
+    sup = _Supervisor(deps=deps, uow_factory=uow_factory)
+
+    async def _boom() -> None:
+        raise RuntimeError("boom")
+
+    async def _crash_once() -> None:
+        task = asyncio.create_task(_boom())
+        await asyncio.sleep(0)  # let it fail
+        run = _Run(config=_stream("s1", running=True), task=task, stop=asyncio.Event())
+        sup.running["s1"] = run
+        sup._reap("s1", run)
+
+    await _crash_once()
+    assert sup.reconnects["s1"] == 1
+
+    await _crash_once()
+    assert sup.reconnects["s1"] == 2
+
+    # a well-behaved run that actually observes its stop event, like run_stream does
+    async def _obedient_run(stop_event: asyncio.Event) -> None:
+        await stop_event.wait()
+
+    stop_event = asyncio.Event()
+    ok_task = asyncio.create_task(_obedient_run(stop_event))
+    sup.running["s1"] = _Run(config=_stream("s1", running=True), task=ok_task, stop=stop_event)
+    await sup._stop_one("s1")
+    assert "s1" not in sup.reconnects

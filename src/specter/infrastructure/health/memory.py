@@ -43,3 +43,6 @@ class InMemoryHealthStore:
     async def bump_watchlist_version(self, watchlist_id: str) -> int:
         self._versions[watchlist_id] += 1
         return self._versions[watchlist_id]
+
+    async def get_watchlist_version(self, watchlist_id: str) -> int:
+        return self._versions[watchlist_id]

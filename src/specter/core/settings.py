@@ -88,6 +88,8 @@ class PipelineSettings(BaseModel):
     evidence_format: str = "jpeg"  # jpeg | npy
     health_publish_interval_s: float = Field(default=2.0, gt=0)
     health_ttl_s: int = Field(default=10, ge=1)
+    aimd_decrease_factor: float = Field(default=0.5, gt=0.0, lt=1.0)
+    aimd_increase_fps: float = Field(default=0.5, gt=0.0)
 
 
 class Settings(BaseSettings):

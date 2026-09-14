@@ -54,14 +54,47 @@ class StreamOutcome:
 
 @dataclass(slots=True)
 class _Matcher:
+    """The resolved matching context plus everything needed to know when it's stale.
+
+    A full reload (``directory_refresh_s``) always wins the tie; otherwise a much
+    cheaper watchlist-version check piggybacks on the health-publish tick, so a
+    target/watchlist edit reaches a running stream in about
+    ``health_publish_interval_s`` instead of waiting out the far longer
+    ``directory_refresh_s``.
+    """
+
     directory: StreamDirectory
     policies: dict[str, NofMPolicy]
     states: dict[_TrackKey, TrackMatchState] = field(default_factory=dict)
+    _watchlist_versions: dict[str, int] = field(default_factory=dict)
+    _last_refresh: float = 0.0
 
     def policy_for(self, resolved: ResolvedTarget | None, fallback: NofMPolicy) -> NofMPolicy:
         if resolved is None:
             return fallback
         return self.policies.get(resolved.watchlist_id, fallback)
+
+    @classmethod
+    async def load(cls, deps: PipelineDeps, stream: StreamConfig) -> "_Matcher":
+        directory = await StreamDirectory.load(deps.uow_factory, stream)
+        matcher = cls(directory=directory, policies=_policies(deps, directory))
+        matcher._watchlist_versions = await _snapshot_versions(deps, directory)
+        matcher._last_refresh = deps.clock.now()
+        return matcher
+
+    async def maybe_refresh(
+        self, deps: PipelineDeps, stream: StreamConfig, vitals: "_HealthTracker"
+    ) -> None:
+        now = deps.clock.now()
+        stale = now - self._last_refresh >= deps.tuning.directory_refresh_s
+        if not stale and vitals.due(deps.tuning.health_publish_interval_s):
+            stale = await _watchlists_changed(deps, self._watchlist_versions)
+        if not stale:
+            return
+        self.directory = await StreamDirectory.load(deps.uow_factory, stream)
+        self.policies = _policies(deps, self.directory)
+        self._watchlist_versions = await _snapshot_versions(deps, self.directory)
+        self._last_refresh = now
 
 
 class _HealthTracker:
@@ -72,8 +105,9 @@ class _HealthTracker:
     stream that struggled earlier and has since recovered reports as healthy *now*.
     """
 
-    def __init__(self, clock: Clock, *, window: int = 200) -> None:
+    def __init__(self, clock: Clock, *, reconnect_count: int = 0, window: int = 200) -> None:
         self._clock = clock
+        self._reconnect_count = reconnect_count
         self._latencies_ms: deque[float] = deque(maxlen=window)
         self.last_frame_at: datetime | None = None
         self._prev_received = 0
@@ -101,6 +135,7 @@ class _HealthTracker:
             fps_processed=max((metrics.processed - self._prev_processed) / elapsed, 0.0),
             frames_dropped_pct=(dropped_delta / received_delta * 100.0) if received_delta else 0.0,
             last_frame_at=self.last_frame_at,
+            reconnect_count=self._reconnect_count,
             inference_p95_ms=_p95(self._latencies_ms),
             queue_depth={"decode": metrics.queue_depth},
             last_error=last_error,
@@ -120,18 +155,21 @@ def _p95(samples: deque[float]) -> float:
 
 
 async def run_stream(
-    deps: PipelineDeps, stream: StreamConfig, *, stop: asyncio.Event
+    deps: PipelineDeps, stream: StreamConfig, *, stop: asyncio.Event, reconnect_count: int = 0
 ) -> StreamOutcome:
     metrics = StreamMetrics()
-    vitals = _HealthTracker(deps.clock)
+    vitals = _HealthTracker(deps.clock, reconnect_count=reconnect_count)
     await _publish(deps, stream, StreamStatus.PROVISIONING, metrics)
     await _write_health(deps, stream, StreamStatus.PROVISIONING, metrics, vitals)
-    directory = await StreamDirectory.load(deps.uow_factory, stream)
-    matcher = _Matcher(directory=directory, policies=_policies(deps, directory))
-    sampler = AdaptiveSampler(stream.sampling, motion_min_delta=deps.tuning.motion_min_delta)
+    matcher = await _Matcher.load(deps, stream)
+    sampler = AdaptiveSampler(
+        stream.sampling,
+        motion_min_delta=deps.tuning.motion_min_delta,
+        decrease_factor=deps.tuning.aimd_decrease_factor,
+        increase_fps=deps.tuning.aimd_increase_fps,
+    )
     source = deps.frame_source_factory(stream)
 
-    last_refresh = deps.clock.now()
     announced = False
     current_status = StreamStatus.PROVISIONING
     reason = "source_exhausted"
@@ -143,18 +181,15 @@ async def run_stream(
                 current_status = StreamStatus.RUNNING
                 await _publish(deps, stream, StreamStatus.RUNNING, metrics)
 
-            now = deps.clock.now()
-            if now - last_refresh >= deps.tuning.directory_refresh_s:
-                matcher.directory = await StreamDirectory.load(deps.uow_factory, stream)
-                matcher.policies = _policies(deps, matcher.directory)
-                last_refresh = now
+            await matcher.maybe_refresh(deps, stream, vitals)
 
             t0 = deps.clock.now()
             await _process_frame(deps, stream, matcher, frame, metrics)
             vitals.record_frame(frame, (deps.clock.now() - t0) * 1000.0)
 
             if vitals.due(deps.tuning.health_publish_interval_s):
-                await _write_health(deps, stream, current_status, metrics, vitals)
+                health = await _write_health(deps, stream, current_status, metrics, vitals)
+                sampler.adjust_for_latency(health.inference_p95_ms)
         if stop.is_set():
             reason = "stopped"
     except asyncio.CancelledError:
@@ -348,6 +383,18 @@ async def _write_health(
     vitals: _HealthTracker,
     *,
     last_error: str | None = None,
-) -> None:
+) -> StreamHealth:
     health = vitals.snapshot(status, metrics, last_error=last_error)
     await deps.health.set_health(stream.id, health, ttl_s=deps.tuning.health_ttl_s)
+    return health
+
+
+async def _snapshot_versions(deps: PipelineDeps, directory: StreamDirectory) -> dict[str, int]:
+    return {wl: await deps.health.get_watchlist_version(wl) for wl in directory.watchlist_ids}
+
+
+async def _watchlists_changed(deps: PipelineDeps, seen: dict[str, int]) -> bool:
+    for watchlist_id, version in seen.items():
+        if await deps.health.get_watchlist_version(watchlist_id) != version:
+            return True
+    return False

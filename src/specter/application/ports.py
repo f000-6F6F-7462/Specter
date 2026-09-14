@@ -156,6 +156,11 @@ class HealthStore(Protocol):
 
     async def bump_watchlist_version(self, watchlist_id: str) -> int: ...
 
+    async def get_watchlist_version(self, watchlist_id: str) -> int:
+        """0 if never bumped — a running stream compares this against the version it
+        last saw to notice a watchlist/target edit without waiting out
+        ``directory_refresh_s``."""
+
 
 #  repositories
 

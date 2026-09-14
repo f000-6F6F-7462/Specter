@@ -48,10 +48,18 @@ class PipelineTuning:
     evidence_ttl_s: int = 3600
 
     health_publish_interval_s: float = 2.0
-    """How often a stream writes its health snapshot to the shared KV."""
+    """How often a stream writes its health snapshot to the shared KV — also the cadence
+    for noticing a watchlist edit and for the AIMD sampling-rate adjustment."""
 
     health_ttl_s: int = 10
     """TTL on that snapshot — a stalled/crashed stream's health naturally expires."""
+
+    aimd_decrease_factor: float = 0.5
+    """Multiplicative backoff on the sampler's effective fps when inference p95 exceeds
+    budget at the current rate."""
+
+    aimd_increase_fps: float = 0.5
+    """Additive recovery step, per adjustment, back toward target_fps."""
 
 
 @dataclass(frozen=True, slots=True)
