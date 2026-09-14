@@ -1,8 +1,9 @@
 """Composition root.
 
-Selectors on ``Settings`` (``bus`` / ``blob`` / ``vectors`` / ``inference`` / ``media``)
-pick the implementation; ``memory`` / ``fake`` / ``synthetic`` are used by tests and by
-``SPECTER_ENV=local`` runs without the backing services and model weights.
+Selectors on ``Settings`` (``bus`` / ``blob`` / ``vectors`` / ``inference`` / ``media``,
+plus ``models.detector.impl`` / ``models.embedders.*.impl`` / ``pipeline.evidence_format``)
+pick the implementation; ``memory`` / ``fake`` / ``synthetic`` / ``npy`` are used by tests
+and by ``SPECTER_ENV=local`` runs without the backing services and model weights.
 """
 
 from collections.abc import Mapping
@@ -17,6 +18,7 @@ from specter.application.ports import (
     Embedder,
     EventBus,
     FaceEmbeddingService,
+    FrameCodec,
     FrameSource,
     FrameSourceFactory,
     Tracker,
@@ -33,6 +35,7 @@ from specter.infrastructure.blob.memory import MemoryBlobStore
 from specter.infrastructure.bus.memory import MemoryBus
 from specter.infrastructure.db import create_engine, session_factory
 from specter.infrastructure.db.uow import SqlAlchemyUnitOfWork
+from specter.infrastructure.media.codec import NumpyFrameCodec
 from specter.infrastructure.media.fakes import SyntheticFrameSource
 from specter.infrastructure.ml.detector import FakeDetector
 from specter.infrastructure.ml.embedder import FakeEmbedder
@@ -55,6 +58,7 @@ class Container:
     detector: Detector
     tracker: Tracker
     embedders: Mapping[str, Embedder]
+    codec: FrameCodec
     pipeline_tuning: PipelineTuning
 
 
@@ -93,24 +97,33 @@ def _build_faces(settings: Settings) -> FaceEmbeddingService:
 def _build_frame_source_factory(settings: Settings) -> FrameSourceFactory:
     if settings.media == "synthetic":
 
-        def factory(stream: StreamConfig) -> FrameSource:
+        def synthetic(stream: StreamConfig) -> FrameSource:
             return SyntheticFrameSource(
                 stream.id, count=None, fps=stream.sampling.target_fps, moving=True
             )
 
-        return factory
+        return synthetic
+    if settings.media == "gstreamer":
+        from specter.infrastructure.media.gstreamer import GStreamerFrameSource
+
+        def gstreamer(stream: StreamConfig) -> FrameSource:
+            return GStreamerFrameSource(stream.id, stream.source)
+
+        return gstreamer
     raise ConfigurationError(
-        "GStreamer capture lands in Phase 5 — set SPECTER_MEDIA=synthetic to run now"
+        f"unknown media source {settings.media!r} — use 'gstreamer' or 'synthetic'"
     )
 
 
 def _build_detector(settings: Settings) -> Detector:
-    impl = settings.models.detector.impl
-    if impl == "fake":
+    cfg = settings.models.detector
+    if cfg.impl == "fake":
         return FakeDetector()
-    raise ConfigurationError(
-        f"detector impl {impl!r} lands in Phase 5 — set models.detector.impl=fake to run now"
-    )
+    if cfg.impl == "yolo":
+        from specter.infrastructure.ml.yolo_detector import YoloDetector
+
+        return YoloDetector(cfg)
+    raise ConfigurationError(f"unknown detector impl {cfg.impl!r} — use 'yolo' or 'fake'")
 
 
 def _build_embedders(settings: Settings) -> dict[str, Embedder]:
@@ -118,12 +131,27 @@ def _build_embedders(settings: Settings) -> dict[str, Embedder]:
     for modality, cfg in settings.models.embedders.items():
         if cfg.impl == "fake":
             embedders[modality] = FakeEmbedder(modality)
+        elif cfg.impl == "insightface":
+            from specter.infrastructure.ml.face_embedder import FaceEmbedder
+
+            embedders[modality] = FaceEmbedder(model_name=cfg.name or "buffalo_l")
         else:
             raise ConfigurationError(
-                f"embedder impl {cfg.impl!r} for {modality!r} lands in Phase 5 — "
-                f"set models.embedders.{modality}.impl=fake to run now"
+                f"unknown embedder impl {cfg.impl!r} for {modality!r} — "
+                f"use 'insightface' or 'fake'"
             )
     return embedders
+
+
+def _build_codec(settings: Settings) -> FrameCodec:
+    fmt = settings.pipeline.evidence_format
+    if fmt == "npy":
+        return NumpyFrameCodec()
+    if fmt == "jpeg":
+        from specter.infrastructure.ml.jpeg_codec import JpegFrameCodec
+
+        return JpegFrameCodec()
+    raise ConfigurationError(f"unknown evidence_format {fmt!r} — use 'jpeg' or 'npy'")
 
 
 def _pipeline_tuning(settings: Settings) -> PipelineTuning:
@@ -165,5 +193,6 @@ def build_container(settings: Settings | None = None) -> Container:
         detector=_build_detector(settings),
         tracker=IouTracker(),
         embedders=_build_embedders(settings),
+        codec=_build_codec(settings),
         pipeline_tuning=_pipeline_tuning(settings),
     )

@@ -37,6 +37,7 @@ from specter.infrastructure.db import (
     create_engine,
     session_factory,
 )
+from specter.infrastructure.media.codec import NumpyFrameCodec
 from specter.infrastructure.media.fakes import SyntheticFrameSource
 from specter.infrastructure.ml.detector import FakeDetector
 from specter.infrastructure.ml.embedder import FakeEmbedder
@@ -125,6 +126,7 @@ async def harness(request: pytest.FixtureRequest) -> AsyncIterator[PipelineHarne
         blob=blob,
         bus=bus,
         clock=FrozenClock(),
+        codec=NumpyFrameCodec(),
         tuning=PipelineTuning(
             need=1,
             window=1,

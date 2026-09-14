@@ -39,8 +39,15 @@ dev = [
 ml = [
     "onnxruntime>=1.29.0",
     "insightface>=2.0",
+    "ultralytics>=8.4.151",
     "opencv-python-headless>=5.0.0.93",
     "pillow>=12.3.0",
+]
+
+# GStreamer capture. Also needs the system GStreamer 1.0 runtime + plugin set
+# (gst-plugins-{base,good,bad,libav}); see the README.
+media = [
+    "pygobject>=3.58.0",
 ]
 
 # Entry points.
@@ -81,7 +88,16 @@ warn_return_any = false
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
-module = ["aiobotocore.*", "botocore.*", "insightface.*", "cv2"]
+module = [
+    "aiobotocore.*",
+    "botocore.*",
+    "insightface.*",
+    "cv2",
+    "gi",
+    "gi.*",
+    "ultralytics",
+    "ultralytics.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -115,8 +131,15 @@ max-line-length = 100
 max-locals = 20
 
 [tool.pylint.typecheck]
-# Optional [ml] extras — not installed for the gate; adapters import them lazily.
-ignored-modules = ["insightface", "insightface.app", "cv2"]
+# Optional [ml] / [media] extras — not installed for the gate; adapters import them lazily.
+ignored-modules = [
+    "insightface",
+    "insightface.app",
+    "cv2",
+    "gi",
+    "gi.repository",
+    "ultralytics",
+]
 
 [tool.pylint."messages control"]
 disable = [

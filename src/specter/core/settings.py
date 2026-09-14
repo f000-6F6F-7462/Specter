@@ -49,9 +49,12 @@ class SecuritySettings(BaseModel):
 
 
 class DetectorSettings(BaseModel):
-    impl: str = "yolo"
+    impl: str = "yolo"  # yolo | fake
     weights: str = "yolo11m.pt"
     device: str = "mps"
+    # None = let the model use its own built-in default; only override deliberately.
+    conf: float | None = Field(default=None, ge=0.0, le=1.0)
+    iou: float | None = Field(default=None, ge=0.0, le=1.0)
     max_batch: int = Field(default=16, ge=1)
     max_delay_ms: float = Field(default=8.0, gt=0)
 
@@ -82,6 +85,7 @@ class PipelineSettings(BaseModel):
     motion_min_delta: float = Field(default=2.0, ge=0.0)
     capture_evidence: bool = True
     evidence_ttl_s: int = Field(default=3600, ge=1)
+    evidence_format: str = "jpeg"  # jpeg | npy
 
 
 class Settings(BaseSettings):
