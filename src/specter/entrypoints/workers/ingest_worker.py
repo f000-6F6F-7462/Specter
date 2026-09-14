@@ -4,7 +4,9 @@ Polls the stream table and reconciles it against the set of running pipeline tas
 starts a ``run_stream`` task for every enabled stream whose desired state is *running*,
 stops the ones that no longer qualify, restarts the ones whose config changed, and
 re-launches crashed ones after a short backoff. One process; one ``asyncio`` task per
-stream; the detector / tracker / embedders are shared across them.
+stream; the detector / tracker / embedders are shared across them — the real detector
+and embedders coalesce every stream's calls into shared forward passes via
+``BatchedDetector``/``BatchedEmbedder`` (see ``infrastructure.ml.inference_service``).
 """
 
 import asyncio
@@ -142,7 +144,11 @@ def main() -> None:  # pragma: no cover - process entrypoint
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, stop.set)
-        await supervise(deps, container.uow_factory, stop=stop)
+        # Starts/stops each batched adapter's MicroBatcher loop around the whole run.
+        async with contextlib.AsyncExitStack() as stack:
+            for adapter in container.lifecycle:
+                await stack.enter_async_context(adapter)
+            await supervise(deps, container.uow_factory, stop=stop)
         await container.engine.dispose()
 
     asyncio.run(_run())

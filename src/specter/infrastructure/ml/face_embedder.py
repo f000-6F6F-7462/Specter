@@ -37,7 +37,7 @@ class FaceEmbedder:
     async def embed(self, crops: Sequence[Crop]) -> list[Embedding]:
         if not crops:
             return []
-        vectors = await asyncio.to_thread(self._embed_sync, [crop.image for crop in crops])
+        vectors = await asyncio.to_thread(self.embed_sync, [crop.image for crop in crops])
         return [Embedding(modality=self.modality, vector=vector) for vector in vectors]
 
     def _model(self) -> Any:
@@ -46,7 +46,10 @@ class FaceEmbedder:
             self._recognition = app.models["recognition"]
         return self._recognition
 
-    def _embed_sync(self, images: list[np.ndarray]) -> list[Vector]:
+    def embed_sync(self, images: list[np.ndarray]) -> list[Vector]:
+        """Synchronous batch embed — the seam ``BatchedEmbedder``'s ``MicroBatcher``
+        calls directly (via ``asyncio.to_thread``) to coalesce crops from every
+        concurrently-running stream into one call."""
         import cv2  # pylint: disable=import-outside-toplevel
 
         model = self._model()
