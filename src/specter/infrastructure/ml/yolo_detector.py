@@ -26,7 +26,7 @@ class YoloDetector:
     async def detect(self, frames: Sequence[Frame]) -> list[list[Detection]]:
         if not frames:
             return []
-        return await asyncio.to_thread(self._predict, list(frames))
+        return await asyncio.to_thread(self.predict_sync, list(frames))
 
     def _load(self) -> Any:
         if self._model is None:
@@ -37,7 +37,10 @@ class YoloDetector:
             self._model = model
         return self._model
 
-    def _predict(self, frames: list[Frame]) -> list[list[Detection]]:
+    def predict_sync(self, frames: list[Frame]) -> list[list[Detection]]:
+        """Synchronous batched forward pass — the seam ``BatchedDetector``'s
+        ``MicroBatcher`` calls directly (via ``asyncio.to_thread``) to coalesce frames
+        from every concurrently-running stream into one call."""
         model = self._load()
         results = model.predict(
             [frame.image for frame in frames], verbose=False, **self._overrides()

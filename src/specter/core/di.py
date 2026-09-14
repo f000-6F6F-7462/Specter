@@ -7,7 +7,9 @@ and by ``SPECTER_ENV=local`` runs without the backing services and model weights
 """
 
 from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -63,6 +65,10 @@ class Container:
     embedders: Mapping[str, Embedder]
     codec: FrameCodec
     pipeline_tuning: PipelineTuning
+    lifecycle: tuple[AbstractAsyncContextManager[Any], ...] = ()
+    """Adapters that need starting/stopping around the process (e.g. a batched
+    detector's MicroBatcher loop) — entered/exited once, in ``specter-ingest``'s
+    ``main()``"""
 
 
 def _build_blob(settings: Settings) -> BlobStore:
@@ -127,26 +133,42 @@ def _build_frame_source_factory(settings: Settings) -> FrameSourceFactory:
     )
 
 
-def _build_detector(settings: Settings) -> Detector:
+def _build_detector(
+    settings: Settings, lifecycle: list[AbstractAsyncContextManager[Any]]
+) -> Detector:
     cfg = settings.models.detector
     if cfg.impl == "fake":
         return FakeDetector()
     if cfg.impl == "yolo":
+        from specter.infrastructure.ml.inference_service import BatchedDetector
         from specter.infrastructure.ml.yolo_detector import YoloDetector
 
-        return YoloDetector(cfg)
+        batched = BatchedDetector(
+            YoloDetector(cfg), max_batch=cfg.max_batch, max_delay_ms=cfg.max_delay_ms
+        )
+        lifecycle.append(batched)
+        return batched
     raise ConfigurationError(f"unknown detector impl {cfg.impl!r} — use 'yolo' or 'fake'")
 
 
-def _build_embedders(settings: Settings) -> dict[str, Embedder]:
+def _build_embedders(
+    settings: Settings, lifecycle: list[AbstractAsyncContextManager[Any]]
+) -> dict[str, Embedder]:
     embedders: dict[str, Embedder] = {}
     for modality, cfg in settings.models.embedders.items():
         if cfg.impl == "fake":
             embedders[modality] = FakeEmbedder(modality)
         elif cfg.impl == "insightface":
             from specter.infrastructure.ml.face_embedder import FaceEmbedder
+            from specter.infrastructure.ml.inference_service import BatchedEmbedder
 
-            embedders[modality] = FaceEmbedder(model_name=cfg.name or "buffalo_l")
+            batched = BatchedEmbedder(
+                FaceEmbedder(model_name=cfg.name or "buffalo_l"),
+                max_batch=cfg.max_batch,
+                max_delay_ms=cfg.max_delay_ms,
+            )
+            lifecycle.append(batched)
+            embedders[modality] = batched
         else:
             raise ConfigurationError(
                 f"unknown embedder impl {cfg.impl!r} for {modality!r} — "
@@ -191,6 +213,7 @@ def build_container(settings: Settings | None = None) -> Container:
     engine = create_engine(settings.database.url)
     sessions = session_factory(engine)
     clock = SystemClock()
+    lifecycle: list[AbstractAsyncContextManager[Any]] = []
 
     def uow_factory() -> UnitOfWork:
         return SqlAlchemyUnitOfWork(sessions)
@@ -206,9 +229,10 @@ def build_container(settings: Settings | None = None) -> Container:
         vectors=_build_vectors(settings),
         faces=_build_faces(settings),
         frame_source_factory=_build_frame_source_factory(settings),
-        detector=_build_detector(settings),
+        detector=_build_detector(settings, lifecycle),
         tracker=IouTracker(),
-        embedders=_build_embedders(settings),
+        embedders=_build_embedders(settings, lifecycle),
         codec=_build_codec(settings),
         pipeline_tuning=_pipeline_tuning(settings),
+        lifecycle=tuple(lifecycle),
     )

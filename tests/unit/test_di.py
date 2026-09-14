@@ -34,6 +34,7 @@ def test_build_container_wires_the_memory_adapters(
     assert type(container.embedders["face"]).__name__ == "FakeEmbedder"
     assert type(container.codec).__name__ == "NumpyFrameCodec"
     assert type(container.health).__name__ == "InMemoryHealthStore"
+    assert container.lifecycle == ()  # nothing to batch — every adapter is a fake
     assert callable(container.frame_source_factory)
 
 
@@ -53,7 +54,7 @@ def test_gstreamer_media_builds_a_lazy_factory(monkeypatch: pytest.MonkeyPatch, 
     assert type(source).__name__ == "GStreamerFrameSource"
 
 
-def test_yolo_detector_builds_without_importing_ultralytics(
+def test_yolo_detector_builds_batched_without_importing_ultralytics(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -65,10 +66,14 @@ def test_yolo_detector_builds_without_importing_ultralytics(
             }
         )
     )
-    assert type(container.detector).__name__ == "YoloDetector"
+    # Real detectors are wrapped in the shared, MicroBatcher-backed BatchedDetector so
+    # every stream's calls coalesce into one forward pass; fakes stay direct-call.
+    assert type(container.detector).__name__ == "BatchedDetector"
+    assert len(container.lifecycle) == 1
+    assert id(container.lifecycle[0]) == id(container.detector)
 
 
-def test_insightface_embedder_builds_without_importing_the_model(
+def test_insightface_embedder_builds_batched_without_importing_the_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -80,7 +85,10 @@ def test_insightface_embedder_builds_without_importing_the_model(
             }
         )
     )
-    assert type(container.embedders["face"]).__name__ == "FaceEmbedder"
+    assert type(container.embedders["face"]).__name__ == "BatchedEmbedder"
+    assert container.embedders["face"].modality == "face"
+    assert len(container.lifecycle) == 1
+    assert id(container.lifecycle[0]) == id(container.embedders["face"])
 
 
 def test_jpeg_evidence_codec_is_selectable(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
