@@ -5,9 +5,9 @@ from datetime import datetime
 from enum import StrEnum
 
 from specter.core.errors import InvalidEntityError
+from specter.entities.geometry import NormalizedBoundingBox
 from specter.entities.rules import CrossingDirection, RuleKind
 from specter.entities.validation import require_non_negative, require_ratio
-from specter.vision.geometry import NormalizedBoundingBox
 
 
 class Disposition(StrEnum):

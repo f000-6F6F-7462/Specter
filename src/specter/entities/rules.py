@@ -5,8 +5,8 @@ from enum import StrEnum
 from typing import ClassVar
 
 from specter.core.errors import InvalidEntityError
+from specter.entities.geometry import NormalizedPoint
 from specter.entities.validation import require_non_negative
-from specter.vision.geometry import NormalizedPoint
 
 
 class RuleKind(StrEnum):

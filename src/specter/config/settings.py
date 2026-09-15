@@ -9,6 +9,9 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 from specter.core.logging import LogFormat
 
+DATABASE_FILE_NAME = "specter.sqlite3"
+BYTES_PER_GIBIBYTE = 1024**3
+
 
 class HardwareProfile(StrEnum):
     """Hardware the device runs on, which selects the detector defaults."""
@@ -81,6 +84,11 @@ class PathSettings(_StrictModel):
     data_directory: Path = Path("/var/lib/specter")
     models_directory: Path = Path("/opt/specter/models")
 
+    @property
+    def database_file(self) -> Path:
+        """The SQLite database file inside the data directory."""
+        return self.data_directory / DATABASE_FILE_NAME
+
 
 class ServiceSettings(_StrictModel):
     """Addresses of the services that run next to Specter."""
@@ -97,6 +105,25 @@ class DetectorSettings(_StrictModel):
     onnxruntime_execution_providers: list[str]
     max_batch_size: int = Field(ge=1)
     max_batch_delay_milliseconds: float = Field(gt=0)
+
+
+class EvidenceSettings(_StrictModel):
+    """How long evidence snapshots are kept and how much disk they may use."""
+
+    maximum_age_days: int = Field(default=30, ge=1)
+    maximum_size_gibibytes: float = Field(default=5.0, gt=0)
+
+    @property
+    def maximum_size_bytes(self) -> int:
+        """The disk quota in bytes."""
+        return int(self.maximum_size_gibibytes * BYTES_PER_GIBIBYTE)
+
+
+class SecuritySettings(_StrictModel):
+    """Where secrets are kept on the device."""
+
+    # Outside the data directory, so a copied database or backup never contains the key.
+    credentials_key_file: Path = Path("/etc/specter/credentials.key")
 
 
 class ApiSettings(_StrictModel):
@@ -124,6 +151,8 @@ class Settings(BaseSettings):
     paths: PathSettings = Field(default_factory=PathSettings)
     services: ServiceSettings = Field(default_factory=ServiceSettings)
     detector: DetectorSettings
+    evidence: EvidenceSettings = Field(default_factory=EvidenceSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 

@@ -1,6 +1,6 @@
 import pytest
 
-from specter.vision.geometry import BoundingBox, NormalizedBoundingBox, NormalizedPoint
+from specter.entities.geometry import BoundingBox, NormalizedBoundingBox, NormalizedPoint
 
 
 def test_iou_is_one_when_boxes_are_identical() -> None:

@@ -5,11 +5,12 @@ from specter.entities.targets import (
     EmbeddingModality,
     EnrollmentStatus,
     ImageStatus,
+    QualityReport,
     ReferenceImage,
+    RejectionReason,
     Target,
+    TargetType,
 )
-from specter.entities.watchlists import TargetType
-from specter.vision.quality import QualityReport, RejectionReason
 
 GOOD_QUALITY = QualityReport(
     detection_score_ratio=0.92,

@@ -5,8 +5,8 @@ import pytest
 
 from specter.core.errors import InvalidEntityError
 from specter.entities.alerts import AlertReview, Disposition, IdentityMatchAlert, RuleAlert
+from specter.entities.geometry import NormalizedBoundingBox
 from specter.entities.rules import RuleKind
-from specter.vision.geometry import NormalizedBoundingBox
 
 CREATED_AT = datetime(2026, 9, 15, 12, 0, tzinfo=UTC)
 BOUNDING_BOX = NormalizedBoundingBox(x=0.25, y=0.1, width=0.2, height=0.6)

@@ -10,8 +10,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from specter.core.identifiers import new_identifier
 from specter.entities.cameras import CameraStatus
 from specter.entities.rules import CrossingDirection, RuleKind
-from specter.entities.targets import EmbeddingModality, ImageStatus
-from specter.vision.quality import RejectionReason
+from specter.entities.targets import EmbeddingModality, ImageStatus, RejectionReason
 
 SCHEMA_VERSION = "1.0"
 

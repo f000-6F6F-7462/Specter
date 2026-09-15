@@ -1,6 +1,7 @@
 import pytest
 
 from specter.core.errors import InvalidEntityError
+from specter.entities.geometry import NormalizedPoint
 from specter.entities.rules import (
     CrossingDirection,
     LineCrossingRule,
@@ -8,7 +9,6 @@ from specter.entities.rules import (
     ZoneOccupancyRule,
 )
 from specter.entities.zones import Zone
-from specter.vision.geometry import NormalizedPoint
 
 
 def test_zone_is_rejected_when_polygon_has_fewer_than_three_points() -> None:

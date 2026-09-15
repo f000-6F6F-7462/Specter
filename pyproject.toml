@@ -9,12 +9,15 @@ description = "Real-time multi-camera edge vision engine: face recognition, obje
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography>=50.0.1",
     "fastapi>=0.141.1",
     "nats-py>=2.15.0",
     "numpy>=2.5.3",
+    "peewee>=4.5.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
+    "qdrant-client>=1.19.0",
     "uvicorn>=0.53.0",
 ]
 
@@ -29,6 +32,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.7",
+    "types-peewee>=4.5.1.20260909",
     "types-pyyaml>=6.0.12.20260906",
 ]
 
@@ -66,6 +70,7 @@ select = [
 ignore = [
     "D105",  # magic methods explain themselves
     "D107",  # __init__ is described by the class docstring
+    "D106",  # peewee's nested Meta classes only hold table options
     "D417",  # Args sections list only the parameters that need explaining
 ]
 
@@ -80,6 +85,7 @@ max-args = 8
     "D",        # test names describe the behavior under test
     "S101",     # assert is how pytest checks
     "S104",     # tests use bind-all addresses as plain setting values
+    "S105",     # tests use made-up credentials
     "S106",     # tests use made-up credentials
     "S603",     # tests start local servers such as nats-server
     "PLR2004",  # expected values are written inline in tests
@@ -91,6 +97,9 @@ strict = true
 warn_unreachable = true
 files = ["src", "tests"]
 plugins = ["pydantic.mypy"]
+# Tests are not packages, so module names come from their paths to keep conftest files apart.
+explicit_package_bases = true
+mypy_path = "src:."
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

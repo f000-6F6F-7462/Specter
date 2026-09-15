@@ -35,8 +35,9 @@ services:
       - "127.0.0.1:1984:1984"
       - "127.0.0.1:8554:8554"
     volumes:
-      # Writable: cameras are registered at runtime through the go2rtc API.
-      - ./go2rtc:/config
+      # Read-only, so go2rtc can never write camera URLs, which contain passwords, to disk.
+      # Specter registers cameras in memory through the go2rtc API instead.
+      - ./go2rtc/go2rtc.yaml:/config/go2rtc.yaml:ro
     restart: unless-stopped
 
 volumes:

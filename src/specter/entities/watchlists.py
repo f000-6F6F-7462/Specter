@@ -4,17 +4,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from specter.entities.targets import TargetType
 from specter.entities.validation import require_non_empty_text, require_ratio
 
 DEFAULT_MATCH_THRESHOLD_RATIO = 0.78
-
-
-class TargetType(StrEnum):
-    """What kind of thing a target is."""
-
-    PERSON = "person"
-    VEHICLE = "vehicle"
-    OBJECT = "object"
 
 
 class WatchlistKind(StrEnum):
