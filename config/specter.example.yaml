@@ -21,6 +21,17 @@ services:
 detector:
   max_batch_size: 8
 
+evidence:
+  # Snapshots older than this are removed, whole days at a time.
+  maximum_age_days: 30
+  # The oldest days are removed first once evidence uses more than this.
+  maximum_size_gibibytes: 5
+
+security:
+  # Created with a new key on first start. Keep it outside the data directory and its
+  # backups; restoring the database on another device needs this file as well.
+  credentials_key_file: /etc/specter/credentials.key
+
 api:
   # Use 0.0.0.0 inside a container so the published port can reach the API.
   host: 127.0.0.1

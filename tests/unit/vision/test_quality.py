@@ -1,10 +1,9 @@
 from dataclasses import replace
 
+from specter.entities.targets import QualityReport, RejectionReason
 from specter.vision.quality import (
     RUNTIME_QUALITY_THRESHOLDS,
-    QualityReport,
     QualityThresholds,
-    RejectionReason,
     assess_quality,
 )
 

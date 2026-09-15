@@ -1,1 +1,1 @@
-"""Pure computer-vision logic with no I/O: geometry, detections, quality, sampling and matching."""
+"""Pure computer-vision logic with no I/O: detections, quality, sampling and matching."""

@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 
 from specter.core.errors import InvalidEntityError
+from specter.entities.geometry import NormalizedPoint
 from specter.entities.validation import require_non_empty_text
-from specter.vision.geometry import NormalizedPoint
 
 MINIMUM_POLYGON_POINT_COUNT = 3
 

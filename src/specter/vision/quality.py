@@ -1,32 +1,8 @@
 """Quality gate for face crops, shared by enrollment and real-time matching."""
 
 from dataclasses import dataclass
-from enum import StrEnum
 
-
-class RejectionReason(StrEnum):
-    """Why an image was not used for matching."""
-
-    NO_FACE_DETECTED = "no_face_detected"
-    MULTIPLE_FACES = "multiple_faces"
-    LOW_DETECTION_SCORE = "low_detection_score"
-    TOO_SMALL = "too_small"
-    TOO_BLURRY = "too_blurry"
-    EXTREME_POSE = "extreme_pose"
-    TOO_DARK = "too_dark"
-    TOO_BRIGHT = "too_bright"
-
-
-@dataclass(frozen=True, slots=True)
-class QualityReport:
-    """Measurements of one face crop."""
-
-    detection_score_ratio: float
-    # 0 is perfectly sharp and 1 is completely blurred.
-    blur_ratio: float
-    face_height_pixels: int
-    yaw_degrees: float
-    brightness_ratio: float
+from specter.entities.targets import QualityReport, RejectionReason
 
 
 @dataclass(frozen=True, slots=True)

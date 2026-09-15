@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from specter.vision.geometry import BoundingBox
+from specter.entities.geometry import BoundingBox
 
 
 @dataclass(frozen=True, slots=True)

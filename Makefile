@@ -3,8 +3,8 @@
 COMPOSE := docker compose -f deploy/compose.base.yaml
 
 .PHONY: help setup install lock upgrade-dependencies format lint type-check test \
-	test-integration test-hardware check ci contracts services-up services-down run-api \
-	run-camera-manager run-camera run-detector clean require-uv
+	test-integration test-hardware check ci contracts services-up services-down migrate \
+	run-api run-camera-manager run-camera run-detector clean require-uv
 
 ##@ Setup
 
@@ -59,6 +59,9 @@ services-up:  ## Start NATS, Qdrant and go2rtc in Docker
 
 services-down:  ## Stop NATS, Qdrant and go2rtc
 	$(COMPOSE) down
+
+migrate: require-uv  ## Apply pending database migrations
+	uv run specter migrate
 
 run-api: require-uv  ## Run the local HTTP API
 	uv run specter api

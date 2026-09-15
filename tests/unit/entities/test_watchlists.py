@@ -1,7 +1,8 @@
 import pytest
 
 from specter.core.errors import InvalidEntityError
-from specter.entities.watchlists import TargetType, Watchlist
+from specter.entities.targets import TargetType
+from specter.entities.watchlists import Watchlist
 
 
 def test_watchlist_is_rejected_when_name_is_empty() -> None:

@@ -6,8 +6,14 @@ from enum import StrEnum
 
 from specter.core.errors import NotFoundError
 from specter.entities.validation import require_non_empty_text, require_unique
-from specter.entities.watchlists import TargetType
-from specter.vision.quality import QualityReport, RejectionReason
+
+
+class TargetType(StrEnum):
+    """What kind of thing a target is."""
+
+    PERSON = "person"
+    VEHICLE = "vehicle"
+    OBJECT = "object"
 
 
 class EmbeddingModality(StrEnum):
@@ -32,6 +38,31 @@ class EnrollmentStatus(StrEnum):
     PARTIAL = "partial"
     READY = "ready"
     FAILED = "failed"
+
+
+class RejectionReason(StrEnum):
+    """Why an image was not used for matching."""
+
+    NO_FACE_DETECTED = "no_face_detected"
+    MULTIPLE_FACES = "multiple_faces"
+    LOW_DETECTION_SCORE = "low_detection_score"
+    TOO_SMALL = "too_small"
+    TOO_BLURRY = "too_blurry"
+    EXTREME_POSE = "extreme_pose"
+    TOO_DARK = "too_dark"
+    TOO_BRIGHT = "too_bright"
+
+
+@dataclass(frozen=True, slots=True)
+class QualityReport:
+    """Measurements of one face crop."""
+
+    detection_score_ratio: float
+    # 0 is perfectly sharp and 1 is completely blurred.
+    blur_ratio: float
+    face_height_pixels: int
+    yaw_degrees: float
+    brightness_ratio: float
 
 
 # Objects are found by rules rather than recognized as individuals, so they have no embeddings.

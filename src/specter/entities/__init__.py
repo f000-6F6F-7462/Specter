@@ -1,1 +1,1 @@
-"""Entities shared by every process: cameras, zones, rules, watchlists, targets and alerts."""
+"""Entities shared by every process, and the geometry they are described in."""
