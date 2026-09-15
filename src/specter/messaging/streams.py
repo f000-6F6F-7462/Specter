@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from nats.js.api import KeyValueConfig, RetentionPolicy, StorageType, StreamConfig
 
 from specter.messaging.subjects import (
-    CONFIGURATION_CHANGED,
     ENROLLMENT_JOBS,
-    ENROLLMENT_STATUS_CHANGED,
     CameraEvent,
+    OwnerEvent,
     build_all_cameras_subject,
+    build_all_owners_subject,
 )
 
 SECONDS_PER_DAY = 86_400
@@ -64,7 +64,7 @@ EVENTS_STREAM = StreamDefinition(
     subjects=(
         build_all_cameras_subject(CameraEvent.MATCH_CONFIRMED),
         build_all_cameras_subject(CameraEvent.RULE_TRIGGERED),
-        ENROLLMENT_STATUS_CHANGED,
+        build_all_owners_subject(OwnerEvent.ENROLLMENT_STATUS_CHANGED),
     ),
     max_age_seconds=EVENTS_RETENTION_SECONDS,
     max_size_bytes=EVENTS_MAX_SIZE_BYTES,
@@ -84,7 +84,7 @@ ENROLLMENT_JOBS_STREAM = StreamDefinition(
 
 CONFIGURATION_STREAM = StreamDefinition(
     name="CONFIGURATION",
-    subjects=(CONFIGURATION_CHANGED,),
+    subjects=(build_all_owners_subject(OwnerEvent.CONFIGURATION_CHANGED),),
     max_messages_per_subject=1,
 )
 

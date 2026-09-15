@@ -1,0 +1,172 @@
+{
+  "$defs": {
+    "CrossingDirection": {
+      "description": "Direction of travel across a line, as seen from the line's start looking toward its end.",
+      "enum": [
+        "left_to_right",
+        "right_to_left",
+        "either"
+      ],
+      "title": "CrossingDirection",
+      "type": "string"
+    },
+    "MessageBoundingBox": {
+      "additionalProperties": false,
+      "description": "A bounding box as fractions of the frame's width and height.",
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Height",
+          "type": "number"
+        },
+        "width": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "MessageBoundingBox",
+      "type": "object"
+    },
+    "RuleKind": {
+      "description": "Which kind of rule fired.",
+      "enum": [
+        "zone_occupancy",
+        "line_crossing"
+      ],
+      "title": "RuleKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A rule fired for a camera's track.",
+  "properties": {
+    "bounding_box": {
+      "$ref": "#/$defs/MessageBoundingBox"
+    },
+    "camera_id": {
+      "title": "Camera Id",
+      "type": "string"
+    },
+    "crossing_direction": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CrossingDirection"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "dwell_seconds": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dwell Seconds"
+    },
+    "frame_captured_at": {
+      "format": "date-time",
+      "title": "Frame Captured At",
+      "type": "string"
+    },
+    "message_id": {
+      "title": "Message Id",
+      "type": "string"
+    },
+    "object_class": {
+      "title": "Object Class",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "owner_id": {
+      "title": "Owner Id",
+      "type": "string"
+    },
+    "rule_id": {
+      "title": "Rule Id",
+      "type": "string"
+    },
+    "rule_kind": {
+      "$ref": "#/$defs/RuleKind"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "snapshot_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Snapshot Url"
+    },
+    "track_id": {
+      "minimum": 0,
+      "title": "Track Id",
+      "type": "integer"
+    },
+    "zone_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Zone Id"
+    }
+  },
+  "required": [
+    "occurred_at",
+    "owner_id",
+    "camera_id",
+    "rule_id",
+    "rule_kind",
+    "track_id",
+    "object_class",
+    "bounding_box",
+    "frame_captured_at"
+  ],
+  "title": "RuleTriggeredMessage",
+  "type": "object"
+}
