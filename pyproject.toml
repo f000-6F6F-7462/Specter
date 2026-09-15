@@ -8,15 +8,27 @@ version = "0.1.0"
 description = "Real-time multi-camera edge vision engine: face recognition, object rules and appearance re-identification"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.141.1",
+    "nats-py>=2.15.0",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
+    "uvicorn>=0.53.0",
+]
+
+[project.scripts]
+specter = "specter.command_line:main"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "mypy>=2.3.1",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "ruff>=0.12.0",
+    "ruff>=0.16.7",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -66,6 +78,8 @@ max-args = 8
 "tests/**" = [
     "D",        # test names describe the behavior under test
     "S101",     # assert is how pytest checks
+    "S104",     # tests use bind-all addresses as plain setting values
+    "S603",     # tests start local servers such as nats-server
     "PLR2004",  # expected values are written inline in tests
 ]
 
@@ -74,11 +88,12 @@ python_version = "3.12"
 strict = true
 warn_unreachable = true
 files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-ra --strict-markers -m 'not integration and not hardware'"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not integration and not hardware'"
 markers = [
     "integration: needs real services such as nats-server, Qdrant or FFmpeg",
     "hardware: needs a specific accelerator such as Hailo or CUDA",

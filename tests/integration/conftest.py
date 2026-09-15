@@ -1,0 +1,85 @@
+import os
+import shutil
+import socket
+import subprocess
+import time
+from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
+
+import pytest
+
+from specter.messaging.client import MessageBus
+
+TEST_NATS_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_NATS_URL"
+NATS_SERVER_START_TIMEOUT_SECONDS = 5.0
+NATS_SERVER_INSTALLATION_URL = (
+    "https://docs.nats.io/running-a-nats-service/introduction/installation"
+)
+
+
+def find_free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port: int = probe.getsockname()[1]
+        return port
+
+
+def wait_until_port_accepts_connections(port: int, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                return
+        except OSError:
+            time.sleep(0.05)
+    pytest.fail(f"nats-server did not accept connections on port {port} in time")
+
+
+@pytest.fixture
+def nats_server_url(tmp_path: Path) -> Iterator[str]:
+    # A server that is already running (for example from `make services-up`) is shared
+    # between runs, so tests must not assume they start from an empty server.
+    external_nats_url = os.environ.get(TEST_NATS_URL_ENVIRONMENT_VARIABLE)
+    if external_nats_url:
+        yield external_nats_url
+        return
+
+    executable = shutil.which("nats-server")
+    if executable is None:
+        pytest.fail(
+            f"nats-server is not installed ({NATS_SERVER_INSTALLATION_URL}); "
+            f"or set {TEST_NATS_URL_ENVIRONMENT_VARIABLE} to a running server"
+        )
+    port = find_free_port()
+    server_process = subprocess.Popen(
+        [
+            executable,
+            "--addr",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--jetstream",
+            "--store_dir",
+            str(tmp_path / "jetstream"),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        wait_until_port_accepts_connections(port, NATS_SERVER_START_TIMEOUT_SECONDS)
+        yield f"nats://127.0.0.1:{port}"
+    finally:
+        server_process.terminate()
+        server_process.wait(timeout=NATS_SERVER_START_TIMEOUT_SECONDS)
+
+
+@pytest.fixture
+async def message_bus(nats_server_url: str) -> AsyncIterator[MessageBus]:
+    connected_message_bus = await MessageBus.connect(nats_server_url, client_name="specter-tests")
+    yield connected_message_bus
+    await connected_message_bus.close()
+
+
+@pytest.fixture
+def unique_camera_id() -> str:
+    return f"test_camera_{time.time_ns()}"

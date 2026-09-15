@@ -25,6 +25,8 @@ htmlcov/
 .env.local
 .env.*.local
 
+/config/specter.yaml
+
 # Runtime artifacts (not source)
 /data/
 /models/

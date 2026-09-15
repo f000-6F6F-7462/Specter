@@ -1,0 +1,33 @@
+# Static settings of a Specter device. Cameras, zones and rules are managed through the API.
+# Copy to specter.yaml and point SPECTER_CONFIG_FILE (or --config) at it.
+# Any value can be overridden by an environment variable, e.g. SPECTER_API__PORT=9000.
+
+device:
+  name: lobby-edge-01
+  # pc-cpu | pc-nvidia | jetson | raspberry-pi-hailo
+  hardware_profile: raspberry-pi-hailo
+
+paths:
+  # SQLite database and evidence files.
+  data_directory: /var/lib/specter
+  models_directory: /opt/specter/models
+
+services:
+  nats_url: nats://localhost:4222
+  qdrant_url: http://localhost:6333
+  go2rtc_url: http://localhost:1984
+
+# Every detector field has a default from the hardware profile; set one only to override it.
+detector:
+  max_batch_size: 8
+
+api:
+  # Use 0.0.0.0 inside a container so the published port can reach the API.
+  host: 127.0.0.1
+  port: 8000
+
+logging:
+  # DEBUG | INFO | WARNING | ERROR
+  level: INFO
+  # text | json
+  format: text
