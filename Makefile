@@ -3,7 +3,7 @@
 COMPOSE := docker compose -f deploy/compose.base.yaml
 
 .PHONY: help setup install lock upgrade-dependencies format lint type-check test \
-	test-integration test-hardware check ci services-up services-down run-api \
+	test-integration test-hardware check ci contracts services-up services-down run-api \
 	run-camera-manager run-camera run-detector clean require-uv
 
 ##@ Setup
@@ -48,6 +48,9 @@ check: lint type-check test  ## Lint, type-check and unit tests
 ci: require-uv  ## Install exactly from uv.lock, then run all checks
 	uv sync --locked
 	$(MAKE) check
+
+contracts: require-uv  ## Regenerate the message JSON Schemas in contracts/jsonschema
+	uv run python -m specter.messaging.schemas contracts/jsonschema
 
 ##@ Run
 

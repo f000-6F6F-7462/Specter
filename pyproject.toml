@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.141.1",
     "nats-py>=2.15.0",
+    "numpy>=2.5.3",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
@@ -79,6 +80,7 @@ max-args = 8
     "D",        # test names describe the behavior under test
     "S101",     # assert is how pytest checks
     "S104",     # tests use bind-all addresses as plain setting values
+    "S106",     # tests use made-up credentials
     "S603",     # tests start local servers such as nats-server
     "PLR2004",  # expected values are written inline in tests
 ]

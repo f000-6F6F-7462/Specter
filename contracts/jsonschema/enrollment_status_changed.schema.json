@@ -1,0 +1,96 @@
+{
+  "$defs": {
+    "ImageStatus": {
+      "description": "Where a reference image is in enrollment.",
+      "enum": [
+        "pending",
+        "embedded",
+        "rejected"
+      ],
+      "title": "ImageStatus",
+      "type": "string"
+    },
+    "RejectionReason": {
+      "description": "Why an image was not used for matching.",
+      "enum": [
+        "no_face_detected",
+        "multiple_faces",
+        "low_detection_score",
+        "too_small",
+        "too_blurry",
+        "extreme_pose",
+        "too_dark",
+        "too_bright"
+      ],
+      "title": "RejectionReason",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A reference image was embedded or rejected.",
+  "properties": {
+    "message_id": {
+      "title": "Message Id",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "owner_id": {
+      "title": "Owner Id",
+      "type": "string"
+    },
+    "quality_score_ratio": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quality Score Ratio"
+    },
+    "reference_image_id": {
+      "title": "Reference Image Id",
+      "type": "string"
+    },
+    "rejection_reason": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RejectionReason"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ImageStatus"
+    },
+    "target_id": {
+      "title": "Target Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "occurred_at",
+    "owner_id",
+    "target_id",
+    "reference_image_id",
+    "status"
+  ],
+  "title": "EnrollmentStatusChangedMessage",
+  "type": "object"
+}

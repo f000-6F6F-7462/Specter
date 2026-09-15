@@ -11,6 +11,7 @@ from specter.messaging.subjects import CameraEvent, build_camera_subject
 pytestmark = pytest.mark.integration
 
 DELIVERY_TIMEOUT_SECONDS = 5.0
+OWNER_ID = "owner_tests"
 
 
 class CameraStatusMessage(BaseModel):
@@ -27,7 +28,7 @@ async def test_published_message_is_stored_in_its_stream_when_streams_are_declar
     message_bus: MessageBus, nats_server_url: str, unique_camera_id: str
 ) -> None:
     await message_bus.declare_streams()
-    subject = build_camera_subject(unique_camera_id, CameraEvent.STATUS_CHANGED)
+    subject = build_camera_subject(OWNER_ID, unique_camera_id, CameraEvent.STATUS_CHANGED)
 
     await message_bus.publish(
         subject, CameraStatusMessage(camera_id=unique_camera_id, status="running")
@@ -47,7 +48,7 @@ async def test_subscriber_receives_parsed_message_when_one_is_published(
     message_bus: MessageBus, unique_camera_id: str
 ) -> None:
     await message_bus.declare_streams()
-    subject = build_camera_subject(unique_camera_id, CameraEvent.STATUS_CHANGED)
+    subject = build_camera_subject(OWNER_ID, unique_camera_id, CameraEvent.STATUS_CHANGED)
     received_messages: asyncio.Queue[CameraStatusMessage] = asyncio.Queue()
     await message_bus.subscribe(subject, CameraStatusMessage, received_messages.put)
 
