@@ -1,7 +1,10 @@
 .DEFAULT_GOAL := help
 
+COMPOSE := docker compose -f deploy/compose.base.yaml
+
 .PHONY: help setup install lock upgrade-dependencies format lint type-check test \
-	test-integration test-hardware check ci clean require-uv
+	test-integration test-hardware check ci services-up services-down run-api \
+	run-camera-manager run-camera run-detector clean require-uv
 
 ##@ Setup
 
@@ -45,6 +48,27 @@ check: lint type-check test  ## Lint, type-check and unit tests
 ci: require-uv  ## Install exactly from uv.lock, then run all checks
 	uv sync --locked
 	$(MAKE) check
+
+##@ Run
+
+services-up:  ## Start NATS, Qdrant and go2rtc in Docker
+	$(COMPOSE) up -d
+
+services-down:  ## Stop NATS, Qdrant and go2rtc
+	$(COMPOSE) down
+
+run-api: require-uv  ## Run the local HTTP API
+	uv run specter api
+
+run-camera-manager: require-uv  ## Run the camera manager
+	uv run specter camera-manager
+
+run-camera: require-uv  ## Run one camera process: make run-camera CAMERA_ID=<id>
+	$(if $(CAMERA_ID),,$(error CAMERA_ID is required: make run-camera CAMERA_ID=front_door))
+	uv run specter camera --camera-id $(CAMERA_ID)
+
+run-detector: require-uv  ## Run the detector
+	uv run specter detector
 
 ##@ Maintenance
 

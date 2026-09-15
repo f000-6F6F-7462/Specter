@@ -1,0 +1,8 @@
+api:
+  listen: ":1984"
+
+rtsp:
+  listen: ":8554"
+
+# Filled at runtime through the go2rtc API as cameras are added.
+streams: {}

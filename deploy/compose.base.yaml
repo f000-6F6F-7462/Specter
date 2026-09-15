@@ -1,0 +1,44 @@
+# Services that run next to Specter on the device.
+# Only MQTT is reachable from the LAN; everything else listens on localhost.
+
+name: specter
+
+services:
+  nats:
+    image: nats:2.14.6-alpine
+    command: ["--config", "/etc/nats/nats-server.conf"]
+    ports:
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+      - "1883:1883"
+    volumes:
+      - ./nats/nats-server.conf:/etc/nats/nats-server.conf:ro
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  go2rtc:
+    image: alexxit/go2rtc:1.9.14
+    ports:
+      - "127.0.0.1:1984:1984"
+      - "127.0.0.1:8554:8554"
+    volumes:
+      # Writable: cameras are registered at runtime through the go2rtc API.
+      - ./go2rtc:/config
+    restart: unless-stopped
+
+volumes:
+  nats-data:
+  qdrant-data:
