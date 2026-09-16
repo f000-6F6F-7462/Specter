@@ -16,6 +16,7 @@ services:
   nats_url: nats://localhost:4222
   qdrant_url: http://localhost:6333
   go2rtc_url: http://localhost:1984
+  go2rtc_rtsp_url: rtsp://localhost:8554
 
 # Every detector field has a default from the hardware profile; set one only to override it.
 detector:

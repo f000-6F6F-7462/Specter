@@ -59,3 +59,14 @@ async def test_operation_is_cancelled_when_shutdown_is_requested_first() -> None
 
     assert not is_completed
     assert operation_task.cancelled()
+
+
+async def test_gathered_operations_are_cancelled_when_shutdown_is_requested_first() -> None:
+    shutdown_requested = asyncio.Event()
+    shutdown_requested.set()
+
+    is_completed = await complete_unless_shutdown(
+        asyncio.gather(asyncio.sleep(NEVER_FINISHING_SECONDS)), shutdown_requested
+    )
+
+    assert not is_completed

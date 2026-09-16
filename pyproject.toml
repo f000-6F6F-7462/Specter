@@ -9,8 +9,10 @@ description = "Real-time multi-camera edge vision engine: face recognition, obje
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "av>=18.1.0",
     "cryptography>=50.0.1",
     "fastapi>=0.141.1",
+    "httpx>=0.28.1",
     "nats-py>=2.15.0",
     "numpy>=2.5.3",
     "peewee>=4.5.1",
@@ -26,7 +28,6 @@ specter = "specter.command_line:main"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "mypy>=2.3.1",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",

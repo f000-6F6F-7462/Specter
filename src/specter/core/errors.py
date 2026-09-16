@@ -15,3 +15,7 @@ class InvalidEntityError(SpecterError, ValueError):
 
 class NotFoundError(SpecterError, LookupError):
     """A requested entity does not exist."""
+
+
+class ExternalServiceError(SpecterError):
+    """A service that Specter depends on, such as go2rtc, failed or cannot be reached."""

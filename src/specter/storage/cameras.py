@@ -66,6 +66,18 @@ def find_camera(camera_id: str, cipher: CredentialCipher | None) -> Camera | Non
     return _build_cameras([record], cipher)[0]
 
 
+def find_camera_settings(camera_id: str) -> Camera | None:
+    """Returns the camera without its credentials, or None if it does not exist.
+
+    Serves processes that never hold the credentials key. The result must never be saved, because
+    saving it would delete the camera's stored password.
+    """
+    record = CameraRecord.get_or_none(CameraRecord.id == camera_id)
+    if record is None:
+        return None
+    return _build_cameras([record], cipher=None, include_credentials=False)[0]
+
+
 def get_camera(camera_id: str, cipher: CredentialCipher | None) -> Camera:
     """Returns the camera.
 
@@ -137,7 +149,12 @@ def _encrypt_password(
     return cipher.encrypt(credentials.password)
 
 
-def _build_cameras(records: list[CameraRecord], cipher: CredentialCipher | None) -> list[Camera]:
+def _build_cameras(
+    records: list[CameraRecord],
+    cipher: CredentialCipher | None,
+    *,
+    include_credentials: bool = True,
+) -> list[Camera]:
     watchlist_ids_by_camera_id = _load_watchlist_ids_by_camera_id(record.id for record in records)
     return [
         Camera(
@@ -145,7 +162,7 @@ def _build_cameras(records: list[CameraRecord], cipher: CredentialCipher | None)
             owner_id=record.owner_id,
             name=record.name,
             source_url=record.source_url,
-            credentials=_build_credentials(record, cipher),
+            credentials=_build_credentials(record, cipher) if include_credentials else None,
             transport=TransportProtocol(record.transport),
             watchlist_ids=watchlist_ids_by_camera_id.get(record.id, ()),
             detection_classes=frozenset(load_json(record.detection_classes_json)),

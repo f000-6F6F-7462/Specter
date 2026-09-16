@@ -30,10 +30,13 @@ async def complete_unless_shutdown(
     try:
         await asyncio.wait((operation_task, shutdown_task), return_when=asyncio.FIRST_COMPLETED)
     finally:
+        # Checked before cancelling, because a cancelled gather ends with an error rather than
+        # counting as cancelled.
+        is_completed = operation_task.done()
         operation_task.cancel()
         shutdown_task.cancel()
         await asyncio.gather(operation_task, shutdown_task, return_exceptions=True)
-    if operation_task.cancelled():
+    if not is_completed:
         return False
     operation_task.result()
     return True
