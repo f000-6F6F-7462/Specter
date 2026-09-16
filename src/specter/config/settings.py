@@ -96,6 +96,8 @@ class ServiceSettings(_StrictModel):
     nats_url: str = "nats://localhost:4222"
     qdrant_url: str = "http://localhost:6333"
     go2rtc_url: str = "http://localhost:1984"
+    # Camera processes read each camera from go2rtc's restream instead of the camera itself.
+    go2rtc_rtsp_url: str = "rtsp://localhost:8554"
 
 
 class DetectorSettings(_StrictModel):

@@ -9,12 +9,19 @@ from pathlib import Path
 
 import pytest
 
+from specter.camera_manager.go2rtc import Go2rtcClient
 from specter.config.settings import MatchingSettings
 from specter.messaging.client import MessageBus
 
 TEST_NATS_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_NATS_URL"
 NATS_SERVER_START_TIMEOUT_SECONDS = 5.0
 NATS_CONNECT_TIMEOUT_SECONDS = 10.0
+TEST_GO2RTC_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_GO2RTC_URL"
+DEFAULT_TEST_GO2RTC_URL = "http://127.0.0.1:1984"
+TEST_GO2RTC_RTSP_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_GO2RTC_RTSP_URL"
+DEFAULT_TEST_GO2RTC_RTSP_URL = "rtsp://127.0.0.1:8554"
+# go2rtc generates this H.264 test pattern itself, so video tests need no camera.
+VIRTUAL_VIDEO_SOURCE_URL = "ffmpeg:virtual?video&size=720#video=h264"
 NATS_SERVER_INSTALLATION_URL = (
     "https://docs.nats.io/running-a-nats-service/introduction/installation"
 )
@@ -100,3 +107,25 @@ def unique_camera_id() -> str:
 @pytest.fixture
 def unique_owner_id() -> str:
     return f"test_owner_{time.time_ns()}"
+
+
+@pytest.fixture
+def go2rtc_api_url() -> str:
+    return os.environ.get(TEST_GO2RTC_URL_ENVIRONMENT_VARIABLE, DEFAULT_TEST_GO2RTC_URL)
+
+
+@pytest.fixture
+def go2rtc_rtsp_url() -> str:
+    return os.environ.get(TEST_GO2RTC_RTSP_URL_ENVIRONMENT_VARIABLE, DEFAULT_TEST_GO2RTC_RTSP_URL)
+
+
+@pytest.fixture
+def virtual_video_source_url() -> str:
+    return VIRTUAL_VIDEO_SOURCE_URL
+
+
+@pytest.fixture
+async def go2rtc_client(go2rtc_api_url: str) -> AsyncIterator[Go2rtcClient]:
+    client = Go2rtcClient(go2rtc_api_url)
+    yield client
+    await client.close()

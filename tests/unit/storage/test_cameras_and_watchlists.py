@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from specter.core.errors import ConfigurationError, InvalidEntityError, NotFoundError
@@ -6,6 +8,7 @@ from specter.entities.targets import TargetType
 from specter.entities.watchlists import Watchlist
 from specter.storage.cameras import (
     delete_camera,
+    find_camera_settings,
     get_camera,
     list_cameras_to_run,
     list_owner_cameras,
@@ -114,3 +117,17 @@ def test_watchlist_is_unchanged_when_saved_and_loaded() -> None:
 def test_deleting_fails_when_camera_does_not_exist() -> None:
     with pytest.raises(NotFoundError):
         delete_camera("camera_missing")
+
+
+def test_camera_settings_are_read_without_credentials_when_camera_has_them(
+    cipher: CredentialCipher,
+) -> None:
+    save_camera(build_camera("camera_front_door"), cipher)
+
+    camera_settings = find_camera_settings("camera_front_door")
+
+    assert camera_settings == replace(build_camera("camera_front_door"), credentials=None)
+
+
+def test_camera_settings_are_missing_when_camera_does_not_exist() -> None:
+    assert find_camera_settings("camera_missing") is None
