@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from nats.errors import ConnectionClosedError
 from nats.errors import Error as NatsError
 
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.messages import (
     ChangeKind,
     ConfigurationChangedMessage,

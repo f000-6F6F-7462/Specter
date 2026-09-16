@@ -13,7 +13,7 @@ from specter.camera_manager.main import supervise_cameras
 from specter.config.loading import CONFIG_FILE_ENVIRONMENT_VARIABLE, load_settings
 from specter.config.settings import Settings
 from specter.entities.cameras import Camera, CameraStatus, DesiredState
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.messages import (
     CameraStatusChangedMessage,
     ChangeKind,

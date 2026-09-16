@@ -20,18 +20,6 @@
       "title": "Camera Id",
       "type": "string"
     },
-    "detail": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Detail"
-    },
     "message_id": {
       "title": "Message Id",
       "type": "string"

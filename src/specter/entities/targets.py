@@ -127,21 +127,6 @@ class ReferenceImage:
     def __post_init__(self) -> None:
         require_unique([embedding.modality for embedding in self.embeddings], "image modalities")
 
-    def find_embedding(self, modality: EmbeddingModality) -> ImageEmbedding | None:
-        """Returns the image's embedding of the given kind, or None if it has none."""
-        return next(
-            (embedding for embedding in self.embeddings if embedding.modality is modality), None
-        )
-
-    def with_embedding(self, embedding: ImageEmbedding) -> "ReferenceImage":
-        """Returns a copy with the embedding, replacing an existing one of the same kind."""
-        other_embeddings = tuple(
-            existing_embedding
-            for existing_embedding in self.embeddings
-            if existing_embedding.modality is not embedding.modality
-        )
-        return replace(self, embeddings=(*other_embeddings, embedding))
-
 
 @dataclass(frozen=True, slots=True)
 class Target:

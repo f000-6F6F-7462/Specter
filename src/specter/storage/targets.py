@@ -97,18 +97,6 @@ def find_target(target_id: str) -> Target | None:
     return _build_targets([record])[0] if record is not None else None
 
 
-def get_target(target_id: str) -> Target:
-    """Returns the target.
-
-    Raises:
-        NotFoundError: The target does not exist.
-    """
-    target = find_target(target_id)
-    if target is None:
-        raise NotFoundError(f"target {target_id} does not exist")
-    return target
-
-
 def list_watchlist_targets(watchlist_id: str) -> list[Target]:
     """Returns the watchlist's targets, oldest first."""
     records = (

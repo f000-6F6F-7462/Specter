@@ -19,11 +19,11 @@ from specter.inference.face_detector import FaceDetector
 from specter.inference.model_store import load_model_manifest
 from specter.inference.object_detector import ObjectDetector
 from specter.inference.onnxruntime_backend import OnnxRuntimeBackend
-from specter.messaging.client import JobWorker, MessageBus
+from specter.messaging.message_bus import JobWorker, MessageBus
 from specter.messaging.streams import ENROLLMENT_JOBS_CONSUMER
 from specter.storage.database import DatabaseThread, open_database
 from specter.storage.migrate import apply_migrations
-from specter.storage.targets import get_target, save_target
+from specter.storage.targets import find_target, save_target
 from specter.storage.vector_index import VectorIndex
 from specter.storage.watchlists import save_watchlist
 
@@ -158,8 +158,9 @@ async def read_face_model_versions_until_enrolled(
     deadline = time.monotonic() + ENROLLMENT_TIMEOUT_SECONDS
     while True:
         target = await asyncio.get_running_loop().run_in_executor(
-            scene.database_thread.executor, partial(get_target, scene.target_id)
+            scene.database_thread.executor, partial(find_target, scene.target_id)
         )
+        assert target is not None
         states = {
             embedding.modality: (embedding.status, embedding.model_version)
             for embedding in target.reference_images[0].embeddings

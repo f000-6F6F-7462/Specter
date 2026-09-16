@@ -47,18 +47,6 @@ def find_rule(rule_id: str) -> Rule | None:
     return None
 
 
-def get_rule(rule_id: str) -> Rule:
-    """Returns the rule of either kind.
-
-    Raises:
-        NotFoundError: The rule does not exist.
-    """
-    rule = find_rule(rule_id)
-    if rule is None:
-        raise NotFoundError(f"rule {rule_id} does not exist")
-    return rule
-
-
 def list_camera_rules(camera_id: str) -> list[Rule]:
     """Returns the camera's rules: occupancy rules of its zones first, then its line rules."""
     zone_occupancy_records = (

@@ -15,7 +15,7 @@ from specter.camera.stream_reader import StreamReader
 from specter.config.settings import Settings
 from specter.core.shutdown import complete_unless_shutdown
 from specter.entities.cameras import Camera
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.messages import CameraHealthReport, ConfigurationChangedMessage, EntityKind
 from specter.messaging.shared_state import CameraHealthBucket, MatchCooldownBucket
 from specter.storage.cameras import find_camera_settings

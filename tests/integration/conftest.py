@@ -13,7 +13,7 @@ from qdrant_client import AsyncQdrantClient
 from specter.camera_manager.go2rtc import Go2rtcClient
 from specter.config.settings import MatchingSettings
 from specter.entities.targets import EmbeddingModality
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.storage.vector_index import COLLECTION_NAMES_BY_MODALITY, VectorIndex
 
 TEST_NATS_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_NATS_URL"

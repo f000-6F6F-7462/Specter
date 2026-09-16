@@ -10,7 +10,7 @@ from specter.config.settings import EvidenceSettings
 from specter.entities.alerts import RuleAlert
 from specter.entities.geometry import NormalizedBoundingBox
 from specter.entities.rules import RuleKind
-from specter.storage.alerts import get_alert, save_alert
+from specter.storage.alerts import find_alert, save_alert
 from specter.storage.database import DatabaseThread, open_database
 from specter.storage.evidence import EvidenceStore
 from specter.storage.migrate import apply_migrations
@@ -66,12 +66,14 @@ async def test_expired_snapshots_are_removed_and_alerts_forget_them(
 
     try:
         await retention.enforce()
-        old_alert = get_alert("alert_old")
-        recent_alert = get_alert("alert_recent")
+        old_alert = find_alert("alert_old")
+        recent_alert = find_alert("alert_recent")
     finally:
         database_thread.executor.shutdown(wait=True)
 
     assert not (tmp_path / "data" / old_snapshot_path).exists()
     assert (tmp_path / "data" / recent_snapshot_path).exists()
+    assert old_alert is not None
+    assert recent_alert is not None
     assert old_alert.snapshot_path is None
     assert recent_alert.snapshot_path == recent_snapshot_path

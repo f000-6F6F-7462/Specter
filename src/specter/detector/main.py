@@ -32,7 +32,7 @@ from specter.inference.model_store import (
     load_model_manifest,
 )
 from specter.inference.object_detector import ObjectDetector
-from specter.messaging.client import JobWorker, MessageBus
+from specter.messaging.message_bus import JobWorker, MessageBus
 from specter.messaging.streams import ENROLLMENT_JOBS_CONSUMER
 from specter.storage.database import DatabaseThread, open_database
 from specter.storage.vector_index import VectorIndex

@@ -7,6 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
+import supervision
 
 from specter.camera.detector_client import DetectorClient
 from specter.camera.person_identifier import ConfirmedMatch, PersonIdentifier
@@ -29,7 +30,7 @@ from specter.inference.face_detector import FaceDetector
 from specter.inference.model_store import load_model_manifest
 from specter.inference.object_detector import ObjectDetector
 from specter.inference.onnxruntime_backend import OnnxRuntimeBackend
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.shared_state import MatchCooldownBucket
 from specter.storage.vector_index import StoredEmbedding, VectorIndex
 from specter.vision.frames import Frame, FrameImage
@@ -212,4 +213,9 @@ async def test_enrolled_person_is_confirmed_once_when_camera_keeps_seeing_her(
         width=ENROLLED_PERSON_BOX.width,
         height=ENROLLED_PERSON_BOX.height,
     )
-    assert match.track.detection.bounding_box.iou(enrolled_box) > MINIMUM_BOX_OVERLAP_RATIO
+    track_box = match.track.detection.bounding_box
+    overlap_ratio = supervision.box_iou(
+        [track_box.x, track_box.y, track_box.right, track_box.bottom],
+        [enrolled_box.x, enrolled_box.y, enrolled_box.right, enrolled_box.bottom],
+    )
+    assert overlap_ratio > MINIMUM_BOX_OVERLAP_RATIO

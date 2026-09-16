@@ -14,7 +14,6 @@ from specter.entities.watchlists import Watchlist
 from specter.storage.targets import (
     find_image_enrollment,
     find_target,
-    get_target,
     list_embedded_image_enabled_states,
     list_enrollment_batch_targets,
     list_pending_image_enrollments,
@@ -88,7 +87,7 @@ def test_target_with_images_is_unchanged_when_saved_and_loaded() -> None:
 
     save_target(target)
 
-    assert get_target("target_jane") == target
+    assert find_target("target_jane") == target
 
 
 def test_images_the_target_no_longer_has_are_deleted_when_saved_again() -> None:
@@ -96,7 +95,9 @@ def test_images_the_target_no_longer_has_are_deleted_when_saved_again() -> None:
 
     save_target(build_target("target_jane", build_image("image_2")))
 
-    assert [image.id for image in get_target("target_jane").reference_images] == ["image_2"]
+    target = find_target("target_jane")
+    assert target is not None
+    assert [image.id for image in target.reference_images] == ["image_2"]
 
 
 def test_target_is_rejected_when_its_watchlist_does_not_exist() -> None:

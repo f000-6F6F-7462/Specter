@@ -7,7 +7,7 @@ from specter.entities.rules import CrossingDirection, LineCrossingRule, ZoneOccu
 from specter.entities.zones import Zone
 from specter.storage.cameras import save_camera
 from specter.storage.rules import delete_rule, find_rule, list_camera_rules, save_rule
-from specter.storage.zones import delete_zone, get_zone, save_zone
+from specter.storage.zones import delete_zone, find_zone, save_zone
 
 # The database comes first, so the camera is saved into this test's own database.
 pytestmark = pytest.mark.usefixtures("database", "front_door_camera")
@@ -46,7 +46,7 @@ def front_door_camera() -> None:
 def test_zone_is_unchanged_when_saved_and_loaded() -> None:
     save_zone(DOOR_ZONE)
 
-    assert get_zone("zone_door") == DOOR_ZONE
+    assert find_zone("zone_door") == DOOR_ZONE
 
 
 def test_zone_is_rejected_when_its_camera_does_not_exist() -> None:

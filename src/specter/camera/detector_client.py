@@ -21,7 +21,7 @@ from specter.frame_transport.detector_requests import (
     SharedFrameReference,
 )
 from specter.frame_transport.shared_frames import SharedFrameWriter
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.vision.detections import Detection
 from specter.vision.frames import Frame
 

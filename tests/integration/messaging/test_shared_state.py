@@ -5,13 +5,9 @@ import pytest
 
 from specter.config.settings import MatchingSettings
 from specter.entities.cameras import CameraStatus
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.messages import CameraHealthReport
-from specter.messaging.shared_state import (
-    CameraHealthBucket,
-    MatchCooldownBucket,
-    WatchlistVersionBucket,
-)
+from specter.messaging.shared_state import CameraHealthBucket, MatchCooldownBucket
 from specter.messaging.streams import MATCH_COOLDOWNS_BUCKET_NAME
 
 pytestmark = pytest.mark.integration
@@ -85,17 +81,3 @@ async def test_existing_cooldown_bucket_follows_the_setting_when_streams_are_dec
         SHORT_COOLDOWN_SECONDS,
         MATCH_COOLDOWN_SECONDS,
     )
-
-
-async def test_watchlist_version_grows_when_watchlist_changes(
-    message_bus: MessageBus, unique_owner_id: str
-) -> None:
-    versions = await WatchlistVersionBucket.open(message_bus)
-
-    version_before_change = await versions.read_version(unique_owner_id, "watchlist_visitors")
-    first_version = await versions.mark_changed(unique_owner_id, "watchlist_visitors")
-    second_version = await versions.mark_changed(unique_owner_id, "watchlist_visitors")
-
-    assert version_before_change is None
-    assert second_version > first_version
-    assert await versions.read_version(unique_owner_id, "watchlist_visitors") == second_version

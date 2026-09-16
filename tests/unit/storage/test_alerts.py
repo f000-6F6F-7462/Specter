@@ -12,7 +12,7 @@ from specter.storage.alerts import (
     AlertFilter,
     AlertPosition,
     clear_snapshot_paths_under,
-    get_alert,
+    find_alert,
     list_identity_match_alerts,
     save_alert,
     save_alert_review,
@@ -52,7 +52,7 @@ def test_identity_match_alert_is_unchanged_when_saved_and_loaded() -> None:
 
     save_alert(alert)
 
-    assert get_alert("alert_1") == alert
+    assert find_alert("alert_1") == alert
 
 
 def test_alert_is_saved_once_when_the_same_alert_is_saved_again() -> None:
@@ -61,7 +61,7 @@ def test_alert_is_saved_once_when_the_same_alert_is_saved_again() -> None:
     save_alert(alert)
     save_alert(replace(alert, similarity_ratio=0.5))
 
-    assert get_alert("alert_redelivered") == alert
+    assert find_alert("alert_redelivered") == alert
 
 
 def test_rule_alert_is_unchanged_when_saved_and_loaded() -> None:
@@ -83,7 +83,7 @@ def test_rule_alert_is_unchanged_when_saved_and_loaded() -> None:
 
     save_alert(alert)
 
-    assert get_alert("alert_line") == alert
+    assert find_alert("alert_line") == alert
 
 
 def test_review_is_stored_when_alert_is_resolved() -> None:
@@ -92,7 +92,9 @@ def test_review_is_stored_when_alert_is_resolved() -> None:
 
     save_alert_review("alert_1", review)
 
-    assert get_alert("alert_1").review == review
+    reviewed_alert = find_alert("alert_1")
+    assert reviewed_alert is not None
+    assert reviewed_alert.review == review
 
 
 def test_reviewing_fails_when_alert_does_not_exist() -> None:
@@ -144,5 +146,9 @@ def test_snapshot_paths_are_cleared_only_under_removed_day_when_retention_runs()
     cleared_alert_count = clear_snapshot_paths_under(f"evidence/{OWNER_ID}/2026/09/15")
 
     assert cleared_alert_count == 1
-    assert get_alert("alert_1").snapshot_path is None
-    assert get_alert("alert_2").snapshot_path is not None
+    cleared_alert = find_alert("alert_1")
+    kept_alert = find_alert("alert_2")
+    assert cleared_alert is not None
+    assert kept_alert is not None
+    assert cleared_alert.snapshot_path is None
+    assert kept_alert.snapshot_path is not None

@@ -17,7 +17,7 @@ from nats.errors import Error as NatsError
 from specter.camera_manager.go2rtc import Go2rtcClient, build_camera_source_url
 from specter.core.shutdown import complete_unless_shutdown
 from specter.entities.cameras import Camera, CameraStatus
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.messages import (
     CameraStatusChangedMessage,
     ConfigurationChangedMessage,

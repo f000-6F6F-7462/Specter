@@ -16,7 +16,7 @@ from specter.frame_transport.detector_requests import (
 from specter.inference.model_store import load_model_manifest
 from specter.inference.object_detector import ObjectDetector
 from specter.inference.onnxruntime_backend import OnnxRuntimeBackend
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.vision.frames import Frame
 
 pytestmark = pytest.mark.models

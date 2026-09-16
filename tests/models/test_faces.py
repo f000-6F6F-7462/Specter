@@ -3,6 +3,7 @@ from collections.abc import Callable
 import cv2
 import numpy as np
 import pytest
+import supervision
 
 from specter.inference.backends import InferenceSession
 from specter.inference.face_detector import FaceDetector
@@ -121,7 +122,12 @@ def test_ncnn_conversion_finds_the_same_faces_when_compared_with_onnx(
                 onnx_face.bounding_box.y + onnx_face.bounding_box.height / 2,
             )
         ]
-        assert nearest_face.bounding_box.iou(onnx_face.bounding_box) > 0.9
+        nearest_box, onnx_box = nearest_face.bounding_box, onnx_face.bounding_box
+        overlap_ratio = supervision.box_iou(
+            [nearest_box.x, nearest_box.y, nearest_box.right, nearest_box.bottom],
+            [onnx_box.x, onnx_box.y, onnx_box.right, onnx_box.bottom],
+        )
+        assert overlap_ratio > 0.9
 
 
 def test_ncnn_conversion_gives_the_same_embedding_when_compared_with_onnx(
