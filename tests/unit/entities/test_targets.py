@@ -6,6 +6,7 @@ from specter.core.errors import InvalidEntityError, NotFoundError
 from specter.entities.targets import (
     EmbeddingModality,
     EnrollmentStatus,
+    ImageEmbedding,
     ImageStatus,
     QualityReport,
     ReferenceImage,
@@ -23,8 +24,15 @@ GOOD_QUALITY = QualityReport(
 )
 
 
-def build_image(image_id: str, status: ImageStatus = ImageStatus.PENDING) -> ReferenceImage:
-    return ReferenceImage(id=image_id, image_path=f"reference_images/{image_id}.jpg", status=status)
+def build_image(image_id: str, *statuses: ImageStatus) -> ReferenceImage:
+    return ReferenceImage(
+        id=image_id,
+        image_path=f"reference_images/{image_id}.jpg",
+        embeddings=tuple(
+            ImageEmbedding(modality, status)
+            for modality, status in zip(EmbeddingModality, statuses, strict=False)
+        ),
+    )
 
 
 def build_target(*images: ReferenceImage) -> Target:
@@ -41,30 +49,56 @@ def build_target(*images: ReferenceImage) -> Target:
     ("image_statuses", "expected_status"),
     [
         ((), EnrollmentStatus.QUEUED),
-        ((ImageStatus.PENDING,), EnrollmentStatus.QUEUED),
-        ((ImageStatus.EMBEDDED,), EnrollmentStatus.READY),
-        ((ImageStatus.EMBEDDED, ImageStatus.PENDING), EnrollmentStatus.PARTIAL),
-        ((ImageStatus.EMBEDDED, ImageStatus.REJECTED), EnrollmentStatus.PARTIAL),
-        ((ImageStatus.REJECTED, ImageStatus.REJECTED), EnrollmentStatus.FAILED),
-        ((ImageStatus.REJECTED, ImageStatus.PENDING), EnrollmentStatus.QUEUED),
+        (((ImageStatus.PENDING, ImageStatus.PENDING),), EnrollmentStatus.QUEUED),
+        (((ImageStatus.EMBEDDED, ImageStatus.EMBEDDED),), EnrollmentStatus.READY),
+        (((ImageStatus.REJECTED, ImageStatus.EMBEDDED),), EnrollmentStatus.PARTIAL),
+        (((ImageStatus.EMBEDDED,), (ImageStatus.PENDING,)), EnrollmentStatus.PARTIAL),
+        (((ImageStatus.REJECTED, ImageStatus.REJECTED),), EnrollmentStatus.FAILED),
+        (((ImageStatus.REJECTED, ImageStatus.PENDING),), EnrollmentStatus.QUEUED),
     ],
 )
-def test_enrollment_status_summarizes_images_when_computed(
-    image_statuses: tuple[ImageStatus, ...], expected_status: EnrollmentStatus
+def test_enrollment_status_summarizes_every_embedding_when_computed(
+    image_statuses: tuple[tuple[ImageStatus, ...], ...], expected_status: EnrollmentStatus
 ) -> None:
-    images = [build_image(f"image_{index}", status) for index, status in enumerate(image_statuses)]
+    images = [
+        build_image(f"image_{index}", *statuses) for index, statuses in enumerate(image_statuses)
+    ]
 
     assert build_target(*images).enrollment_status is expected_status
 
 
 def test_mark_embedded_clears_previous_rejection_when_called() -> None:
-    rejected_image = build_image("image_1").mark_rejected(RejectionReason.TOO_BLURRY, None)
+    rejected_embedding = ImageEmbedding(EmbeddingModality.FACE).mark_rejected(
+        RejectionReason.TOO_BLURRY, None
+    )
 
-    embedded_image = rejected_image.mark_embedded(GOOD_QUALITY, model_version="arcface-r100")
+    embedded_embedding = rejected_embedding.mark_embedded(GOOD_QUALITY, model_version="arcface-r50")
 
-    assert embedded_image.status is ImageStatus.EMBEDDED
-    assert embedded_image.rejection_reason is None
-    assert embedded_image.model_version == "arcface-r100"
+    assert embedded_embedding.status is ImageStatus.EMBEDDED
+    assert embedded_embedding.rejection_reason is None
+    assert embedded_embedding.model_version == "arcface-r50"
+
+
+def test_new_image_waits_for_every_modality_of_the_target() -> None:
+    image = build_target().create_reference_image("image_1", "reference_images/image_1.jpg")
+
+    assert [(embedding.modality, embedding.status) for embedding in image.embeddings] == [
+        (EmbeddingModality.FACE, ImageStatus.PENDING),
+        (EmbeddingModality.APPEARANCE, ImageStatus.PENDING),
+    ]
+
+
+def test_with_embedding_replaces_the_embedding_of_the_same_modality() -> None:
+    image = build_image("image_1", ImageStatus.PENDING, ImageStatus.PENDING)
+
+    updated_image = image.with_embedding(
+        ImageEmbedding(EmbeddingModality.APPEARANCE).mark_embedded(None, "osnet_x0_25")
+    )
+
+    appearance_embedding = updated_image.find_embedding(EmbeddingModality.APPEARANCE)
+    assert len(updated_image.embeddings) == 2
+    assert appearance_embedding is not None
+    assert appearance_embedding.status is ImageStatus.EMBEDDED
 
 
 def test_with_reference_image_replaces_image_when_id_already_exists() -> None:
@@ -75,7 +109,7 @@ def test_with_reference_image_replaces_image_when_id_already_exists() -> None:
     assert len(updated_target.reference_images) == 2
     updated_image = updated_target.find_reference_image("image_1")
     assert updated_image is not None
-    assert updated_image.status is ImageStatus.EMBEDDED
+    assert updated_image.embeddings[0].status is ImageStatus.EMBEDDED
 
 
 def test_without_reference_image_fails_when_image_does_not_exist() -> None:

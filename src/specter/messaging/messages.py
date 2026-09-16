@@ -106,19 +106,19 @@ class CameraStatusChangedMessage(SpecterMessage):
 
 
 class EnrollmentJobMessage(SpecterMessage):
-    """A reference image is waiting to be embedded by the detector."""
+    """One kind of embedding of a reference image is waiting to be enrolled by the detector."""
 
     target_id: str
     reference_image_id: str
-    image_path: str
     modality: EmbeddingModality
 
 
 class EnrollmentStatusChangedMessage(SpecterMessage):
-    """A reference image was embedded or rejected."""
+    """One kind of embedding of a reference image was enrolled or rejected."""
 
     target_id: str
     reference_image_id: str
+    modality: EmbeddingModality
     status: ImageStatus
     rejection_reason: RejectionReason | None = None
     quality_score_ratio: float | None = Field(default=None, ge=0.0, le=1.0)

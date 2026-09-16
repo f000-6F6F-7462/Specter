@@ -70,12 +70,20 @@ class VectorIndex:
 
     async def ensure_collections(
         self, vector_sizes_by_modality: Mapping[EmbeddingModality, int]
-    ) -> None:
-        """Creates missing collections, with indexes on every field that searches filter by."""
+    ) -> list[EmbeddingModality]:
+        """Creates missing collections, with indexes on every field that searches filter by.
+
+        A collection whose vectors have another size belongs to a model that is no longer used, so
+        it is replaced. Returns the modalities whose collections were replaced.
+        """
+        replaced_modalities: list[EmbeddingModality] = []
         for modality, vector_size in vector_sizes_by_modality.items():
             collection_name = COLLECTION_NAMES_BY_MODALITY[modality]
             if await self._client.collection_exists(collection_name):
-                continue
+                if await self._read_vector_size(collection_name) == vector_size:
+                    continue
+                await self._client.delete_collection(collection_name)
+                replaced_modalities.append(modality)
             await self._client.create_collection(
                 collection_name,
                 vectors_config=models.VectorParams(
@@ -91,6 +99,7 @@ class VectorIndex:
                 IS_ENABLED_PAYLOAD_FIELD,
                 field_schema=models.PayloadSchemaType.BOOL,
             )
+        return replaced_modalities
 
     async def upsert_embedding(self, embedding: StoredEmbedding) -> None:
         """Stores the embedding, replacing an earlier one of the same image and modality."""
@@ -182,19 +191,20 @@ class VectorIndex:
         await self._delete_matching("reference_image_id", reference_image_id)
 
     async def synchronize(
-        self, is_enabled_by_reference_image_id: Mapping[str, bool]
+        self, is_enabled_by_embedding: Mapping[tuple[str, EmbeddingModality], bool]
     ) -> SynchronizationReport:
-        """Removes points of images that no longer exist and corrects stale enabled flags.
+        """Removes points that are no longer embedded and corrects stale enabled flags.
 
         Args:
-            is_enabled_by_reference_image_id: Every embedded reference image in the database,
+            is_enabled_by_embedding: Every embedded reference image and modality in the database,
                 with whether its target is enabled.
         """
         removed_point_count = 0
         updated_point_count = 0
-        for collection_name in await self._list_existing_collection_names():
+        for modality in await self._list_existing_modalities():
+            collection_name = COLLECTION_NAMES_BY_MODALITY[modality]
             stale_point_ids, point_ids_by_expected_state = await self._find_drifted_points(
-                collection_name, is_enabled_by_reference_image_id
+                collection_name, modality, is_enabled_by_embedding
             )
             if stale_point_ids:
                 await self._client.delete(
@@ -216,7 +226,10 @@ class VectorIndex:
         )
 
     async def _find_drifted_points(
-        self, collection_name: str, is_enabled_by_reference_image_id: Mapping[str, bool]
+        self,
+        collection_name: str,
+        modality: EmbeddingModality,
+        is_enabled_by_embedding: Mapping[tuple[str, EmbeddingModality], bool],
     ) -> tuple[list[PointId], dict[bool, list[PointId]]]:
         stale_point_ids: list[PointId] = []
         point_ids_by_expected_state: dict[bool, list[PointId]] = {}
@@ -231,8 +244,8 @@ class VectorIndex:
             )
             for record in records:
                 payload = record.payload or {}
-                expected_state = is_enabled_by_reference_image_id.get(
-                    str(payload.get("reference_image_id"))
+                expected_state = is_enabled_by_embedding.get(
+                    (str(payload.get("reference_image_id")), modality)
                 )
                 if expected_state is None:
                     stale_point_ids.append(record.id)
@@ -250,12 +263,22 @@ class VectorIndex:
             )
 
     async def _list_existing_collection_names(self) -> list[str]:
+        return [
+            COLLECTION_NAMES_BY_MODALITY[modality]
+            for modality in await self._list_existing_modalities()
+        ]
+
+    async def _list_existing_modalities(self) -> list[EmbeddingModality]:
         # Deletions can arrive before the detector ever created a collection.
         return [
-            collection_name
-            for collection_name in COLLECTION_NAMES_BY_MODALITY.values()
+            modality
+            for modality, collection_name in COLLECTION_NAMES_BY_MODALITY.items()
             if await self._client.collection_exists(collection_name)
         ]
+
+    async def _read_vector_size(self, collection_name: str) -> int | None:
+        vectors = (await self._client.get_collection(collection_name)).config.params.vectors
+        return vectors.size if isinstance(vectors, models.VectorParams) else None
 
 
 def _match_field(field_name: str, value: str | bool) -> models.FieldCondition:

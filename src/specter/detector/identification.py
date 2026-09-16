@@ -23,7 +23,6 @@ from specter.vision.detections import FaceDetection
 from specter.vision.frames import FrameImage
 from specter.vision.quality import RUNTIME_QUALITY_THRESHOLDS, assess_quality, score_quality
 
-IDENTIFICATION_THREAD_NAME = "specter-identification"
 EMPTY_REPLY = IdentificationReply(results=())
 # A person's box can cut through the head, so the face is searched with a margin around it.
 PERSON_BOX_MARGIN_RATIO = 0.1
@@ -50,8 +49,9 @@ class _Models:
 class IdentificationService:
     """Finds and embeds the faces and appearance of the people that cameras track.
 
-    Requests run one at a time on a dedicated thread, so identification never competes with itself
-    for the CPU, and each request's faces and crops run as one batch per model.
+    Requests run on the detector's single model thread, one at a time and in turn with enrollment,
+    so neither competes with the other for the CPU; each request's faces and crops run as one batch
+    per model.
     """
 
     def __init__(
@@ -62,6 +62,7 @@ class IdentificationService:
         face_recognition_session: InferenceSession,
         appearance_session: InferenceSession,
         appearance_embedder: AppearanceEmbedder,
+        model_executor: ThreadPoolExecutor,
     ) -> None:
         self._models = _Models(
             face_detection_session=face_detection_session,
@@ -71,15 +72,13 @@ class IdentificationService:
             appearance_embedder=appearance_embedder,
         )
         self._frame_readers = SharedFrameReaders()
-        self._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix=IDENTIFICATION_THREAD_NAME
-        )
+        self._model_executor = model_executor
 
     async def answer(self, raw_request: bytes) -> bytes:
         """Answers a serialized identification request with the serialized reply."""
         request = IdentificationRequest.model_validate_json(raw_request)
         reply = await asyncio.get_running_loop().run_in_executor(
-            self._executor, self.identify, request
+            self._model_executor, self.identify, request
         )
         return reply.model_dump_json().encode()
 
@@ -133,9 +132,8 @@ class IdentificationService:
         )
 
     def close(self) -> None:
-        """Waits for the running request, then detaches from every camera's region."""
-        self._executor.submit(self._frame_readers.close).result()
-        self._executor.shutdown(wait=True)
+        """Detaches from every camera's region once the model thread is free."""
+        self._model_executor.submit(self._frame_readers.close).result()
 
     def _find_face(self, image: FrameImage, person_box: PixelBox) -> _FoundFace | None:
         frame_height, frame_width = image.shape[:2]
