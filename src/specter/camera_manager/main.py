@@ -3,6 +3,7 @@
 import asyncio
 import logging
 
+from specter.camera_manager.alert_recorder import AlertRecorder
 from specter.camera_manager.go2rtc import Go2rtcClient
 from specter.camera_manager.supervisor import CameraManager
 from specter.config.settings import Settings
@@ -33,7 +34,7 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
 async def supervise_cameras(
     settings: Settings, message_bus: MessageBus, shutdown_requested: asyncio.Event
 ) -> None:
-    """Keeps a process running for every camera that should run, until shutdown is requested."""
+    """Runs every camera that should run and records their alerts, until shutdown is requested."""
     cipher = CredentialCipher(
         load_or_create_credentials_key(settings.security.credentials_key_file)
     )
@@ -48,7 +49,10 @@ async def supervise_cameras(
             go2rtc_client=go2rtc_client,
         )
         logger.info("camera manager started")
-        await camera_manager.run(shutdown_requested)
+        await asyncio.gather(
+            camera_manager.run(shutdown_requested),
+            AlertRecorder(message_bus, database_thread).run(shutdown_requested),
+        )
     finally:
         await go2rtc_client.close()
         database_thread.close()

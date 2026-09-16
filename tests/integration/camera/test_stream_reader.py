@@ -13,8 +13,8 @@ pytestmark = pytest.mark.integration
 FRAME_TIMEOUT_SECONDS = 30.0
 STATUS_TIMEOUT_SECONDS = 15.0
 STATUS_POLL_INTERVAL_SECONDS = 0.1
-MODEL_INPUT_SIZE_PIXELS = 640
-# The virtual 1280x720 stream, scaled down to fit a 640-pixel square model input.
+MAXIMUM_FRAME_SIZE_PIXELS = 640
+# The virtual 1280x720 stream, scaled down to fit a 640-pixel square.
 SCALED_VIDEO_SHAPE = (360, 640, 3)
 
 
@@ -34,8 +34,8 @@ async def test_newer_frames_are_decoded_when_stream_is_available(
     stream_reader = StreamReader(
         "camera_test",
         f"{go2rtc_rtsp_url}/{virtual_stream_name}",
-        maximum_width_pixels=MODEL_INPUT_SIZE_PIXELS,
-        maximum_height_pixels=MODEL_INPUT_SIZE_PIXELS,
+        maximum_width_pixels=MAXIMUM_FRAME_SIZE_PIXELS,
+        maximum_height_pixels=MAXIMUM_FRAME_SIZE_PIXELS,
     )
     stream_reader.start()
     try:
@@ -54,8 +54,8 @@ async def test_status_is_reconnecting_when_stream_does_not_exist(go2rtc_rtsp_url
     stream_reader = StreamReader(
         "camera_test",
         f"{go2rtc_rtsp_url}/missing_stream_{time.time_ns()}",
-        maximum_width_pixels=MODEL_INPUT_SIZE_PIXELS,
-        maximum_height_pixels=MODEL_INPUT_SIZE_PIXELS,
+        maximum_width_pixels=MAXIMUM_FRAME_SIZE_PIXELS,
+        maximum_height_pixels=MAXIMUM_FRAME_SIZE_PIXELS,
     )
     stream_reader.start()
     try:

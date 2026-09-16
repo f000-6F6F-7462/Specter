@@ -11,7 +11,7 @@ from nats.js.api import RetentionPolicy, StreamConfig
 
 from specter.config.settings import MatchingSettings
 from specter.entities.targets import EmbeddingModality, ImageStatus
-from specter.messaging.client import EnrollmentJobWorker, JobDelivery, MessageBus
+from specter.messaging.client import JobDelivery, JobWorker, MessageBus
 from specter.messaging.messages import (
     ChangeKind,
     ConfigurationChangedMessage,
@@ -19,7 +19,7 @@ from specter.messaging.messages import (
     EnrollmentStatusChangedMessage,
     EntityKind,
 )
-from specter.messaging.streams import EVENTS_STREAM, WorkQueueConsumerDefinition
+from specter.messaging.streams import EVENTS_STREAM, JobConsumerDefinition
 from specter.messaging.subjects import build_message_subject
 
 pytestmark = pytest.mark.integration
@@ -32,7 +32,7 @@ UNPARSEABLE_JOB_WAIT_SECONDS = 1.0
 
 
 @pytest.fixture
-async def job_consumer(nats_server_url: str) -> AsyncIterator[WorkQueueConsumerDefinition]:
+async def job_consumer(nats_server_url: str) -> AsyncIterator[JobConsumerDefinition]:
     # A private work queue per test, so jobs never reach a real detector or another test.
     unique_suffix = time.time_ns()
     stream_name = f"TEST_JOBS_{unique_suffix}"
@@ -43,7 +43,7 @@ async def job_consumer(nats_server_url: str) -> AsyncIterator[WorkQueueConsumerD
         StreamConfig(name=stream_name, subjects=[subject], retention=RetentionPolicy.WORK_QUEUE)
     )
     try:
-        yield WorkQueueConsumerDefinition(
+        yield JobConsumerDefinition(
             name="test_workers",
             stream_name=stream_name,
             subject=subject,
@@ -108,7 +108,7 @@ async def test_latest_change_then_new_ones_are_delivered_when_following_configur
 
 
 async def test_job_is_delivered_again_until_handler_succeeds(
-    message_bus: MessageBus, nats_server_url: str, job_consumer: WorkQueueConsumerDefinition
+    message_bus: MessageBus, nats_server_url: str, job_consumer: JobConsumerDefinition
 ) -> None:
     await publish_job(
         nats_server_url, job_consumer.subject, build_enrollment_job().model_dump_json()
@@ -123,7 +123,7 @@ async def test_job_is_delivered_again_until_handler_succeeds(
     )
 
     await asyncio.wait_for(
-        EnrollmentJobWorker(message_bus, handle_job, job_consumer).run(shutdown_requested),
+        JobWorker(message_bus, job_consumer, handle_job).run(shutdown_requested),
         DELIVERY_TIMEOUT_SECONDS,
     )
 
@@ -135,7 +135,7 @@ async def test_job_is_delivered_again_until_handler_succeeds(
 
 
 async def test_last_attempt_is_marked_when_job_keeps_failing(
-    message_bus: MessageBus, nats_server_url: str, job_consumer: WorkQueueConsumerDefinition
+    message_bus: MessageBus, nats_server_url: str, job_consumer: JobConsumerDefinition
 ) -> None:
     await publish_job(
         nats_server_url, job_consumer.subject, build_enrollment_job().model_dump_json()
@@ -150,7 +150,7 @@ async def test_last_attempt_is_marked_when_job_keeps_failing(
     )
 
     await asyncio.wait_for(
-        EnrollmentJobWorker(message_bus, handle_job, job_consumer).run(shutdown_requested),
+        JobWorker(message_bus, job_consumer, handle_job).run(shutdown_requested),
         DELIVERY_TIMEOUT_SECONDS,
     )
 
@@ -159,7 +159,7 @@ async def test_last_attempt_is_marked_when_job_keeps_failing(
 
 
 async def test_job_is_dropped_without_handling_when_it_cannot_be_parsed(
-    message_bus: MessageBus, nats_server_url: str, job_consumer: WorkQueueConsumerDefinition
+    message_bus: MessageBus, nats_server_url: str, job_consumer: JobConsumerDefinition
 ) -> None:
     await publish_job(nats_server_url, job_consumer.subject, "not a job")
     deliveries: list[JobDelivery] = []
@@ -173,7 +173,7 @@ async def test_job_is_dropped_without_handling_when_it_cannot_be_parsed(
     )
 
     await asyncio.wait_for(
-        EnrollmentJobWorker(message_bus, handle_job, job_consumer).run(shutdown_requested),
+        JobWorker(message_bus, job_consumer, handle_job).run(shutdown_requested),
         DELIVERY_TIMEOUT_SECONDS,
     )
 
@@ -214,13 +214,14 @@ def build_enrollment_job() -> EnrollmentJobMessage:
 
 
 async def fail_before_attempt(
-    job: EnrollmentJobMessage,
+    raw_job: bytes,
     delivery: JobDelivery,
     *,
     successful_attempt_number: int | None,
     deliveries: list[JobDelivery],
     shutdown_requested: asyncio.Event,
 ) -> None:
+    job = EnrollmentJobMessage.model_validate_json(raw_job)
     deliveries.append(delivery)
     if delivery.attempt_number == successful_attempt_number or delivery.is_last_attempt:
         shutdown_requested.set()
@@ -236,7 +237,7 @@ async def publish_job(nats_server_url: str, subject: str, payload: str) -> None:
         await connection.close()
 
 
-async def count_unfinished_jobs(nats_server_url: str, consumer: WorkQueueConsumerDefinition) -> int:
+async def count_unfinished_jobs(nats_server_url: str, consumer: JobConsumerDefinition) -> int:
     connection = await nats.connect(nats_server_url)
     try:
         consumer_info = await connection.jetstream().consumer_info(

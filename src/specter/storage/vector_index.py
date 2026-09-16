@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 from specter.entities.targets import EmbeddingModality
 from specter.vision.identity_matching import Candidate
@@ -17,6 +18,7 @@ COLLECTION_NAMES_BY_MODALITY: Mapping[EmbeddingModality, str] = {
 KEYWORD_PAYLOAD_FIELDS = ("owner_id", "watchlist_id", "target_id", "reference_image_id")
 IS_ENABLED_PAYLOAD_FIELD = "is_enabled"
 SCROLL_PAGE_SIZE = 256
+HTTP_NOT_FOUND = 404
 
 # Deriving point ids from the reference image makes re-embedding an image replace its point.
 POINT_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "embeddings.specter")
@@ -122,25 +124,31 @@ class VectorIndex:
     ) -> list[Candidate]:
         """Returns the most similar enabled images of the owner's watchlists, most similar first.
 
-        A camera without watchlists matches nothing.
+        A camera without watchlists matches nothing, and so does a modality that nothing was
+        enrolled for yet, whose collection does not exist.
         """
         if not watchlist_ids:
             return []
-        response = await self._client.query_points(
-            COLLECTION_NAMES_BY_MODALITY[modality],
-            query=list(vector),
-            query_filter=models.Filter(
-                must=[
-                    _match_field("owner_id", owner_id),
-                    _match_field(IS_ENABLED_PAYLOAD_FIELD, True),
-                    models.FieldCondition(
-                        key="watchlist_id", match=models.MatchAny(any=list(watchlist_ids))
-                    ),
-                ]
-            ),
-            limit=limit,
-            with_payload=True,
-        )
+        try:
+            response = await self._client.query_points(
+                COLLECTION_NAMES_BY_MODALITY[modality],
+                query=list(vector),
+                query_filter=models.Filter(
+                    must=[
+                        _match_field("owner_id", owner_id),
+                        _match_field(IS_ENABLED_PAYLOAD_FIELD, True),
+                        models.FieldCondition(
+                            key="watchlist_id", match=models.MatchAny(any=list(watchlist_ids))
+                        ),
+                    ]
+                ),
+                limit=limit,
+                with_payload=True,
+            )
+        except UnexpectedResponse as error:
+            if error.status_code == HTTP_NOT_FOUND:
+                return []
+            raise
         return [
             Candidate(
                 target_id=str(point.payload["target_id"]),

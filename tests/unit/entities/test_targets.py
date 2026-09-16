@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from specter.core.errors import InvalidEntityError, NotFoundError
@@ -84,6 +86,12 @@ def test_without_reference_image_fails_when_image_does_not_exist() -> None:
 def test_target_is_rejected_when_reference_image_ids_repeat() -> None:
     with pytest.raises(InvalidEntityError, match="duplicates"):
         build_target(build_image("image_1"), build_image("image_1"))
+
+
+def test_vehicle_has_no_embeddings_because_rules_find_it() -> None:
+    vehicle = replace(build_target(), target_type=TargetType.VEHICLE)
+
+    assert vehicle.embedding_modalities == ()
 
 
 def test_person_is_recognized_by_face_and_appearance_when_enrolled() -> None:

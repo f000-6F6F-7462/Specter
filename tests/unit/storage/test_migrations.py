@@ -32,7 +32,7 @@ def test_nothing_is_applied_when_migrations_run_again(tmp_path: Path) -> None:
     second_run_names = apply_migrations(database)
     database.close()
 
-    assert first_run_names == ["0001_initial"]
+    assert first_run_names == ["0001_initial", "0002_matching_per_modality"]
     assert second_run_names == []
 
 

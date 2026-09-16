@@ -33,11 +33,11 @@ class _DecodedFrame:
 class StreamReader:
     """Decodes a video stream on a background thread and hands over only its newest frame.
 
-    Frames are scaled down to fit the given size, usually the model's input, while they are
-    converted. Analysis runs slower than the camera, so a frame that arrives while analysis is
-    busy replaces the waiting one instead of queuing behind it. A stream that fails or cannot be
-    opened is opened again with growing delays until the reader is stopped. Must be created
-    inside the running event loop.
+    Frames larger than the given size are scaled down to fit it while they are converted. Analysis
+    runs slower than the camera, so a frame that arrives while analysis is busy replaces the
+    waiting one instead of queuing behind it. A stream that fails or cannot be opened is opened
+    again with growing delays until the reader is stopped. Must be created inside the running
+    event loop.
     """
 
     def __init__(

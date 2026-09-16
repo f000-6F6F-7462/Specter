@@ -15,12 +15,13 @@ dependencies = [
     "httpx>=0.28.1",
     "nats-py>=2.15.0",
     "numpy>=2.5.3",
-    "opencv-python-headless>=5.0.0.93",
+    "opencv-python>=5.0.0.93",
     "peewee>=4.5.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
     "qdrant-client>=1.19.0",
+    "trackers>=2.6.0",
     "uvicorn>=0.53.0",
 ]
 

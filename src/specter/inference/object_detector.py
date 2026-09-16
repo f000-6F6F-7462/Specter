@@ -45,8 +45,8 @@ class LetterboxTransform:
 class ObjectDetector:
     """YOLO26's input preparation and output decoding, for one model input size.
 
-    Frames are letterboxed in the camera process, which also makes every frame the same size for
-    batching; the batch tensor is built and decoded in the detector process.
+    Letterboxing gives frames of every camera and resolution the model's input size, so they can
+    run in one batch.
     """
 
     def __init__(

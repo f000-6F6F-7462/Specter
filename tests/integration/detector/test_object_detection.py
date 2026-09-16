@@ -7,9 +7,9 @@ import cv2
 import numpy as np
 import pytest
 
-from specter.camera.detection_client import DetectionClient
+from specter.camera.detector_client import DetectorClient
 from specter.detector.batcher import DetectionBatcher
-from specter.frame_transport.detection_requests import (
+from specter.frame_transport.detector_requests import (
     DETECTION_REQUESTS_SUBJECT,
     DETECTOR_QUEUE_GROUP,
 )
@@ -43,28 +43,21 @@ async def test_people_and_bus_are_found_when_camera_sends_a_frame_to_the_detecto
         max_batch_delay_seconds=BATCH_DELAY_SECONDS,
     )
     batching_task = asyncio.create_task(batcher.run())
-    detection_client = DetectionClient(
-        "camera_detection_test", message_bus, model.input_width, model.input_height
-    )
-    # The stream reader hands over frames already scaled to fit the model input.
-    scale = min(
-        model.input_width / street_image.shape[1], model.input_height / street_image.shape[0]
-    )
-    scaled_image = np.asarray(cv2.resize(street_image, None, fx=scale, fy=scale), dtype=np.uint8)
+    detector_client = DetectorClient("camera_detection_test", message_bus)
     frame = Frame(
         camera_id="camera_detection_test",
         sequence_number=1,
         presentation_time_seconds=0.0,
         captured_at=datetime.now(UTC),
-        image=scaled_image,
+        image=np.asarray(street_image, dtype=np.uint8),
     )
     try:
         await message_bus.serve_requests(
             DETECTION_REQUESTS_SUBJECT, DETECTOR_QUEUE_GROUP, batcher.answer
         )
-        detections = await detection_client.detect(frame)
+        detections = await detector_client.detect(frame)
     finally:
-        detection_client.close()
+        detector_client.close()
         batching_task.cancel()
         await asyncio.gather(batching_task, return_exceptions=True)
         batcher.close()
@@ -73,4 +66,4 @@ async def test_people_and_bus_are_found_when_camera_sends_a_frame_to_the_detecto
     class_counts = Counter(detection.object_class for detection in detections)
     assert class_counts["person"] >= 3
     assert class_counts["bus"] >= 1
-    assert detection_client.latency_percentile_milliseconds is not None
+    assert detector_client.latency_percentile_milliseconds is not None

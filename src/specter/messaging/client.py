@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
 
@@ -16,16 +17,11 @@ from nats.js.errors import BucketNotFoundError, NotFoundError
 from nats.js.kv import KeyValue
 from pydantic import ValidationError
 
-from specter.messaging.messages import (
-    ConfigurationChangedMessage,
-    EnrollmentJobMessage,
-    SpecterMessage,
-)
+from specter.messaging.messages import ConfigurationChangedMessage, SpecterMessage
 from specter.messaging.streams import (
-    ENROLLMENT_JOBS_CONSUMER,
     STREAM_DEFINITIONS,
+    JobConsumerDefinition,
     KeyValueBucketDefinition,
-    WorkQueueConsumerDefinition,
     build_key_value_bucket_definitions,
 )
 from specter.messaging.subjects import OwnerEvent, build_all_owners_subject, build_message_subject
@@ -49,6 +45,9 @@ class JobDelivery:
 
     attempt_number: int
     is_last_attempt: bool
+
+
+type JobHandler = Callable[[bytes, JobDelivery], Awaitable[None]]
 
 
 class MessageBus:
@@ -131,8 +130,8 @@ class MessageBus:
             deliver_policy=DeliverPolicy.LAST_PER_SUBJECT,
         )
 
-    async def subscribe_to_work_queue(
-        self, consumer: WorkQueueConsumerDefinition
+    async def subscribe_to_jobs(
+        self, consumer: JobConsumerDefinition
     ) -> JetStreamContext.PullSubscription:
         """Creates the durable consumer if needed and returns a subscription that pulls its jobs."""
         return await self._jetstream.pull_subscribe(
@@ -210,31 +209,37 @@ class MessageBus:
         logger.warning("NATS connection error: %s", error)
 
 
-class EnrollmentJobWorker:
-    """Takes enrollment jobs from their work queue one at a time and hands each to a handler.
+class JobWorker:
+    """Takes a consumer's jobs one at a time and hands each job's payload to a handler.
 
-    A job is acknowledged when the handler returns, and delivered again after the consumer's next
+    The payload's format belongs to the flow that owns the consumer, and its handler parses it. A
+    job is acknowledged when the handler returns, and delivered again after the consumer's next
     redelivery delay when the handler raises. The handler is told which attempt is the last so it
-    can record a final outcome, because the job is dropped after it. A job that cannot be parsed
-    is dropped at once, since delivering it again cannot succeed.
+    can record a final outcome, because the job is dropped after it. A job whose payload fails
+    validation is dropped at once, since delivering it again cannot succeed.
     """
 
     def __init__(
         self,
         message_bus: MessageBus,
-        handle_job: Callable[[EnrollmentJobMessage, JobDelivery], Awaitable[None]],
-        consumer: WorkQueueConsumerDefinition = ENROLLMENT_JOBS_CONSUMER,
+        consumer: JobConsumerDefinition,
+        handle_job: JobHandler,
     ) -> None:
         self._message_bus = message_bus
-        self._handle_job = handle_job
         self._consumer = consumer
+        self._handle_job = handle_job
 
     async def run(self, shutdown_requested: asyncio.Event) -> None:
         """Processes jobs until shutdown is requested."""
-        subscription = await self._message_bus.subscribe_to_work_queue(self._consumer)
-        while not shutdown_requested.is_set():
-            for raw_job in await self._fetch_next_jobs(subscription):
-                await self._process_job(raw_job)
+        subscription = await self._message_bus.subscribe_to_jobs(self._consumer)
+        try:
+            while not shutdown_requested.is_set():
+                for raw_job in await self._fetch_next_jobs(subscription):
+                    await self._process_job(raw_job)
+        finally:
+            # A subscription left open makes closing the connection wait for its drain timeout.
+            with suppress(NatsError):
+                await subscription.unsubscribe()
 
     @staticmethod
     async def _fetch_next_jobs(subscription: JetStreamContext.PullSubscription) -> list[Msg]:
@@ -249,26 +254,24 @@ class EnrollmentJobWorker:
             return []
 
     async def _process_job(self, raw_job: Msg) -> None:
-        try:
-            job = EnrollmentJobMessage.model_validate_json(raw_job.data)
-        except ValidationError:
-            logger.exception(
-                "dropping a job that cannot be parsed", extra={"subject": raw_job.subject}
-            )
-            await raw_job.term()
-            return
-
         attempt_number = raw_job.metadata.num_delivered
         delivery = JobDelivery(
             attempt_number=attempt_number,
             is_last_attempt=attempt_number >= self._consumer.max_deliveries,
         )
+        log_context = {
+            "consumer": self._consumer.name,
+            "subject": raw_job.subject,
+            "attempt_number": attempt_number,
+        }
         try:
-            await self._handle_job(job, delivery)
+            await self._handle_job(raw_job.data, delivery)
+        except ValidationError:
+            logger.exception("dropping a job that cannot be parsed", extra=log_context)
+            await raw_job.term()
+            return
         except Exception:
-            logger.exception(
-                "job failed", extra={"message_id": job.message_id, "attempt_number": attempt_number}
-            )
+            logger.exception("job failed", extra=log_context)
             if delivery.is_last_attempt:
                 await raw_job.term()
             else:
