@@ -79,7 +79,7 @@ def test_loading_fails_when_key_file_cannot_be_created(tmp_path: Path) -> None:
     read_only_directory = tmp_path / "read_only"
     read_only_directory.mkdir(mode=0o500)
 
-    with pytest.raises(ConfigurationError, match="cannot create the credentials key file"):
+    with pytest.raises(ConfigurationError, match="cannot create the secret file"):
         load_or_create_credentials_key(read_only_directory / "credentials.key")
 
 

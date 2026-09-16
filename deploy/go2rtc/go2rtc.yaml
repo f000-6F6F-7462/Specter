@@ -4,5 +4,10 @@ api:
 rtsp:
   listen: ":8554"
 
+# Viewers receive WebRTC media directly from this port, so it is the only go2rtc port that is
+# published beyond the device; the API handles the negotiation and keeps go2rtc's API private.
+webrtc:
+  listen: ":8555"
+
 # Filled at runtime through the go2rtc API as cameras are added.
 streams: {}

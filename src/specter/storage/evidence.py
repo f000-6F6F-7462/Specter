@@ -83,6 +83,16 @@ class EvidenceStore:
             raise NotFoundError(f"snapshot {snapshot_path} does not exist")
         return snapshot_file
 
+    def delete_owner_evidence(self, owner_id: str) -> None:
+        """Deletes every snapshot of the owner.
+
+        Raises:
+            ValueError: The id could escape the evidence directory.
+        """
+        if owner_id in FORBIDDEN_PATH_COMPONENTS or "/" in owner_id or "\\" in owner_id:
+            raise ValueError(f"{owner_id!r} cannot be used in an evidence path")
+        shutil.rmtree(self._evidence_directory / owner_id, ignore_errors=True)
+
     def enforce_retention(
         self, today: date, maximum_age_days: int, maximum_size_bytes: int
     ) -> RetentionReport:

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from urllib.parse import urlsplit
 
 from specter.core.errors import InvalidEntityError
 from specter.entities.validation import (
@@ -90,6 +91,11 @@ class Camera:
         require_non_empty_text(self.name, "camera name")
         require_non_empty_text(self.source_url, "camera source_url")
         require_unique(self.watchlist_ids, "camera watchlist_ids")
+        # A password inside the URL would be stored and returned in plain text, unlike credentials.
+        if urlsplit(self.source_url).password is not None:
+            raise InvalidEntityError(
+                "camera source_url must not contain a password; use credentials"
+            )
 
     @property
     def should_run(self) -> bool:

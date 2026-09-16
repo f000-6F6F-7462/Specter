@@ -36,11 +36,15 @@ security:
   # Created with a new key on first start. Keep it outside the data directory and its
   # backups; restoring the database on another device needs this file as well.
   credentials_key_file: /etc/specter/credentials.key
+  # Created with a new token on first start. The application server sends it as a bearer token.
+  api_token_file: /etc/specter/api.token
 
 api:
   # Use 0.0.0.0 inside a container so the published port can reach the API.
   host: 127.0.0.1
   port: 8000
+  # Larger reference image uploads are refused.
+  maximum_image_size_mebibytes: 10
 
 logging:
   # DEBUG | INFO | WARNING | ERROR

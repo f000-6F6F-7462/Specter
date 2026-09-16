@@ -54,9 +54,9 @@ def main(arguments: Sequence[str] | None = None) -> None:
     # Each process imports only its own modules, so a camera process never loads FastAPI.
     match parsed_arguments.command:
         case "api":
-            from specter.api.main import run as run_api  # noqa: PLC0415
+            from specter.api.main import serve as serve_api  # noqa: PLC0415
 
-            run_api(settings)
+            asyncio.run(run_until_shutdown_signal(partial(serve_api, settings)))
         case "camera-manager":
             from specter.camera_manager.main import run as run_camera_manager  # noqa: PLC0415
 

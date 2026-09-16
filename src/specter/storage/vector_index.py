@@ -62,7 +62,8 @@ class VectorIndex:
     @classmethod
     def connect(cls, qdrant_url: str) -> "VectorIndex":
         """Returns an index backed by the Qdrant server at the URL."""
-        return cls(AsyncQdrantClient(url=qdrant_url))
+        # The device pins Qdrant's version, and checking it would contact Qdrant before it is used.
+        return cls(AsyncQdrantClient(url=qdrant_url, check_compatibility=False))
 
     async def close(self) -> None:
         """Closes the connection to Qdrant."""
@@ -185,6 +186,10 @@ class VectorIndex:
     async def delete_watchlist(self, watchlist_id: str) -> None:
         """Deletes every embedding of the watchlist's targets."""
         await self._delete_matching("watchlist_id", watchlist_id)
+
+    async def delete_owner(self, owner_id: str) -> None:
+        """Deletes every embedding of the owner."""
+        await self._delete_matching("owner_id", owner_id)
 
     async def delete_reference_image(self, reference_image_id: str) -> None:
         """Deletes every embedding of the reference image."""

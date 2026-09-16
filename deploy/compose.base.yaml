@@ -32,6 +32,9 @@ services:
     ports:
       - "127.0.0.1:1984:1984"
       - "127.0.0.1:8554:8554"
+      # WebRTC media for viewers on the network; it carries only streams the API negotiated.
+      - "8555:8555/tcp"
+      - "8555:8555/udp"
     volumes:
       # Read-only, so go2rtc can never write camera URLs, which contain passwords, to disk.
       # Specter registers cameras in memory through the go2rtc API instead.
