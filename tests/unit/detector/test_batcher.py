@@ -4,13 +4,15 @@ import time
 import numpy as np
 
 from specter.detector.batcher import DetectionBatcher
-from specter.frame_transport.detection_requests import DetectionRequest
+from specter.frame_transport.detector_requests import DetectionRequest, SharedFrameReference
 from specter.frame_transport.shared_frames import SharedFrameWriter
 from specter.inference.backends import Tensor
 from specter.inference.object_detector import COCO_CLASS_NAMES, ObjectDetector
 
 INPUT_WIDTH_PIXELS = 64
 INPUT_HEIGHT_PIXELS = 64
+FRAME_WIDTH_PIXELS = 160
+FRAME_HEIGHT_PIXELS = 90
 CANDIDATE_COUNT = 21
 BATCH_DELAY_SECONDS = 0.2
 
@@ -18,25 +20,24 @@ BATCH_DELAY_SECONDS = 0.2
 class RecordingSession:
     def __init__(self) -> None:
         self.batch_sizes: list[int] = []
+        self.input_shapes: list[tuple[int, ...]] = []
 
     def run(self, inputs: Tensor) -> list[list[Tensor]]:
         self.batch_sizes.append(len(inputs))
+        self.input_shapes.append(inputs.shape)
         empty_output = np.zeros((1, 4 + len(COCO_CLASS_NAMES), CANDIDATE_COUNT), np.float32)
         return [[empty_output] for _ in inputs]
 
 
 def build_request(frame_writer: SharedFrameWriter, sequence_number: int) -> DetectionRequest:
     return DetectionRequest(
-        camera_id="camera_front_door",
-        shared_memory_name=frame_writer.name,
-        frame_sequence_number=sequence_number,
-        input_width=INPUT_WIDTH_PIXELS,
-        input_height=INPUT_HEIGHT_PIXELS,
-        scale=1.0,
-        padding_x_pixels=0,
-        padding_y_pixels=0,
-        frame_width_pixels=INPUT_WIDTH_PIXELS,
-        frame_height_pixels=INPUT_HEIGHT_PIXELS,
+        frame=SharedFrameReference(
+            camera_id="camera_front_door",
+            shared_memory_name=frame_writer.name,
+            frame_sequence_number=sequence_number,
+            frame_width_pixels=FRAME_WIDTH_PIXELS,
+            frame_height_pixels=FRAME_HEIGHT_PIXELS,
+        )
     )
 
 
@@ -45,12 +46,12 @@ async def run_batcher(
 ) -> list[int]:
     frame_writers = [
         SharedFrameWriter(
-            f"camera_{time.time_ns()}_{index}", INPUT_WIDTH_PIXELS, INPUT_HEIGHT_PIXELS
+            f"camera_{time.time_ns()}_{index}", FRAME_WIDTH_PIXELS, FRAME_HEIGHT_PIXELS
         )
         for index in range(2)
     ]
     for frame_writer in frame_writers:
-        frame_writer.write(np.zeros((INPUT_HEIGHT_PIXELS, INPUT_WIDTH_PIXELS, 3), np.uint8), 1)
+        frame_writer.write(np.zeros((FRAME_HEIGHT_PIXELS, FRAME_WIDTH_PIXELS, 3), np.uint8), 1)
     batcher = DetectionBatcher(
         session,
         ObjectDetector(INPUT_WIDTH_PIXELS, INPUT_HEIGHT_PIXELS),
@@ -83,6 +84,14 @@ async def test_requests_arriving_together_run_as_one_batch_when_batch_has_room()
 
     assert session.batch_sizes == [2]
     assert object_counts == [0, 0]
+
+
+async def test_frames_are_letterboxed_to_model_input_when_they_are_larger() -> None:
+    session = RecordingSession()
+
+    await run_batcher(session, max_batch_size=4, sequence_numbers=[1, 1])
+
+    assert session.input_shapes == [(2, 3, INPUT_HEIGHT_PIXELS, INPUT_WIDTH_PIXELS)]
 
 
 async def test_requests_run_separately_when_batch_size_is_one() -> None:

@@ -6,14 +6,15 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from specter.frame_transport.detection_requests import (
+from specter.frame_transport.detector_requests import (
     DetectedObject,
     DetectionReply,
     DetectionRequest,
+    PixelBox,
 )
-from specter.frame_transport.shared_frames import SharedFrameReader
+from specter.frame_transport.shared_frames import SharedFrameReaders
 from specter.inference.backends import InferenceSession
-from specter.inference.object_detector import LetterboxTransform, ObjectDetector
+from specter.inference.object_detector import ObjectDetector
 from specter.vision.frames import FrameImage
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ class DetectionBatcher:
         self._max_batch_size = max_batch_size
         self._max_batch_delay_seconds = max_batch_delay_seconds
         self._pending_requests: asyncio.Queue[_PendingRequest] = asyncio.Queue()
-        self._frame_readers: dict[str, SharedFrameReader] = {}
+        self._frame_readers = SharedFrameReaders()
 
     async def answer(self, raw_request: bytes) -> bytes:
         """Answers a serialized detection request with the serialized reply."""
@@ -81,9 +82,7 @@ class DetectionBatcher:
 
     def close(self) -> None:
         """Detaches from every camera's shared memory region."""
-        for frame_reader in self._frame_readers.values():
-            frame_reader.close()
-        self._frame_readers.clear()
+        self._frame_readers.close()
 
     async def _collect_batch(self) -> list[_PendingRequest]:
         batch = [await self._pending_requests.get()]
@@ -102,34 +101,30 @@ class DetectionBatcher:
 
     def _detect_batch(self, requests: Sequence[DetectionRequest]) -> list[DetectionReply]:
         replies = [EMPTY_REPLY] * len(requests)
-        readable_frames = [
-            (index, image)
+        letterboxed_frames = [
+            (index, *self._object_detector.letterbox(image))
             for index, image in enumerate(self._read_frame(request) for request in requests)
             if image is not None
         ]
-        if not readable_frames:
+        if not letterboxed_frames:
             return replies
         all_outputs = self._session.run(
-            self._object_detector.build_input_tensor([image for _, image in readable_frames])
-        )
-        for (index, _), outputs in zip(readable_frames, all_outputs, strict=True):
-            request = requests[index]
-            transform = LetterboxTransform(
-                scale=request.scale,
-                padding_x_pixels=request.padding_x_pixels,
-                padding_y_pixels=request.padding_y_pixels,
-                frame_width_pixels=request.frame_width_pixels,
-                frame_height_pixels=request.frame_height_pixels,
+            self._object_detector.build_input_tensor(
+                [letterboxed_image for _, letterboxed_image, _ in letterboxed_frames]
             )
+        )
+        for (index, _, transform), outputs in zip(letterboxed_frames, all_outputs, strict=True):
             replies[index] = DetectionReply(
                 detected_objects=tuple(
                     DetectedObject(
                         object_class=detection.object_class,
                         confidence_ratio=detection.confidence_ratio,
-                        x=detection.bounding_box.x,
-                        y=detection.bounding_box.y,
-                        width=detection.bounding_box.width,
-                        height=detection.bounding_box.height,
+                        box=PixelBox(
+                            x=detection.bounding_box.x,
+                            y=detection.bounding_box.y,
+                            width=detection.bounding_box.width,
+                            height=detection.bounding_box.height,
+                        ),
                     )
                     for detection in self._object_detector.decode(outputs, transform)
                 )
@@ -137,22 +132,10 @@ class DetectionBatcher:
         return replies
 
     def _read_frame(self, request: DetectionRequest) -> FrameImage | None:
-        frame_reader = self._frame_readers.get(request.shared_memory_name)
-        if frame_reader is not None and frame_reader.matches_size(
-            request.input_width, request.input_height
-        ):
-            image = frame_reader.read(request.frame_sequence_number)
-            if image is not None:
-                return image
-        # A restarted camera creates a new region under the same name, which needs a new attachment.
-        if frame_reader is not None:
-            frame_reader.close()
-        try:
-            frame_reader = SharedFrameReader(
-                request.shared_memory_name, request.input_width, request.input_height
-            )
-        except FileNotFoundError:
-            self._frame_readers.pop(request.shared_memory_name, None)
-            return None
-        self._frame_readers[request.shared_memory_name] = frame_reader
-        return frame_reader.read(request.frame_sequence_number)
+        frame = request.frame
+        return self._frame_readers.read(
+            frame.shared_memory_name,
+            frame.frame_width_pixels,
+            frame.frame_height_pixels,
+            frame.frame_sequence_number,
+        )

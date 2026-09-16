@@ -67,10 +67,11 @@ class QualityReport:
     brightness_ratio: float
 
 
-# Objects are found by rules rather than recognized as individuals, so they have no embeddings.
+# Only people are recognized as individuals; vehicles and other objects are found by rules, because
+# the appearance model is trained on people and tells vehicles apart poorly.
 EMBEDDING_MODALITIES_BY_TARGET_TYPE: Mapping[TargetType, tuple[EmbeddingModality, ...]] = {
     TargetType.PERSON: (EmbeddingModality.FACE, EmbeddingModality.APPEARANCE),
-    TargetType.VEHICLE: (EmbeddingModality.APPEARANCE,),
+    TargetType.VEHICLE: (),
     TargetType.OBJECT: (),
 }
 

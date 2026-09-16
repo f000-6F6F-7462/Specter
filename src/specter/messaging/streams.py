@@ -35,6 +35,11 @@ ENROLLMENT_JOB_ACK_WAIT_SECONDS = 120.0
 # A failed job is retried with growing delays; the last attempt starts about seven minutes after
 # the first one.
 ENROLLMENT_JOB_REDELIVERY_DELAYS_SECONDS = (10.0, 30.0, 60.0, 300.0)
+# Saving an alert takes milliseconds, so a longer wait means the recorder stopped.
+ALERT_RECORDING_ACK_WAIT_SECONDS = 30.0
+# A failed save usually means the database is busy or its disk is full, which can take a while to
+# clear; the last attempt starts about fifteen minutes after the first one.
+ALERT_RECORDING_REDELIVERY_DELAYS_SECONDS = (1.0, 5.0, 30.0, 120.0, 300.0, 600.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,8 +88,12 @@ class KeyValueBucketDefinition:
 
 
 @dataclass(frozen=True, slots=True)
-class WorkQueueConsumerDefinition:
-    """A durable consumer that gives each job to one worker and delivers it until acknowledged."""
+class JobConsumerDefinition:
+    """A durable consumer that gives each message to one worker and delivers it until acknowledged.
+
+    On a work queue stream the message is removed once acknowledged; on any other stream it stays
+    for other consumers.
+    """
 
     name: str
     stream_name: str
@@ -149,12 +158,28 @@ STREAM_DEFINITIONS = (
     CONFIGURATION_STREAM,
 )
 
-ENROLLMENT_JOBS_CONSUMER = WorkQueueConsumerDefinition(
+ENROLLMENT_JOBS_CONSUMER = JobConsumerDefinition(
     name="enrollment_workers",
     stream_name=ENROLLMENT_JOBS_STREAM.name,
     subject=ENROLLMENT_JOBS,
     ack_wait_seconds=ENROLLMENT_JOB_ACK_WAIT_SECONDS,
     redelivery_delays_seconds=ENROLLMENT_JOB_REDELIVERY_DELAYS_SECONDS,
+)
+
+# The camera manager records every alert event into the database, one consumer per event kind.
+MATCH_ALERTS_CONSUMER = JobConsumerDefinition(
+    name="match_alert_recorders",
+    stream_name=EVENTS_STREAM.name,
+    subject=build_all_cameras_subject(CameraEvent.MATCH_CONFIRMED),
+    ack_wait_seconds=ALERT_RECORDING_ACK_WAIT_SECONDS,
+    redelivery_delays_seconds=ALERT_RECORDING_REDELIVERY_DELAYS_SECONDS,
+)
+RULE_ALERTS_CONSUMER = JobConsumerDefinition(
+    name="rule_alert_recorders",
+    stream_name=EVENTS_STREAM.name,
+    subject=build_all_cameras_subject(CameraEvent.RULE_TRIGGERED),
+    ack_wait_seconds=ALERT_RECORDING_ACK_WAIT_SECONDS,
+    redelivery_delays_seconds=ALERT_RECORDING_REDELIVERY_DELAYS_SECONDS,
 )
 
 # Health and cooldowns change every few seconds and are cheap to rebuild, so they stay in

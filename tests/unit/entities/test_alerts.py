@@ -7,6 +7,7 @@ from specter.core.errors import InvalidEntityError
 from specter.entities.alerts import AlertReview, Disposition, IdentityMatchAlert, RuleAlert
 from specter.entities.geometry import NormalizedBoundingBox
 from specter.entities.rules import RuleKind
+from specter.entities.targets import EmbeddingModality
 
 CREATED_AT = datetime(2026, 9, 15, 12, 0, tzinfo=UTC)
 BOUNDING_BOX = NormalizedBoundingBox(x=0.25, y=0.1, width=0.2, height=0.6)
@@ -20,6 +21,7 @@ def build_identity_match_alert() -> IdentityMatchAlert:
         track_id=17,
         watchlist_id="watchlist_visitors",
         target_id="target_jane",
+        modality=EmbeddingModality.FACE,
         similarity_ratio=0.86,
         margin_ratio=0.31,
         object_class="person",

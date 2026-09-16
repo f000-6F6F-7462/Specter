@@ -8,10 +8,13 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
+from qdrant_client import AsyncQdrantClient
 
 from specter.camera_manager.go2rtc import Go2rtcClient
 from specter.config.settings import MatchingSettings
+from specter.entities.targets import EmbeddingModality
 from specter.messaging.client import MessageBus
+from specter.storage.vector_index import COLLECTION_NAMES_BY_MODALITY, VectorIndex
 
 TEST_NATS_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_NATS_URL"
 NATS_SERVER_START_TIMEOUT_SECONDS = 5.0
@@ -22,6 +25,10 @@ TEST_GO2RTC_RTSP_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_GO2RTC_RTSP_URL"
 DEFAULT_TEST_GO2RTC_RTSP_URL = "rtsp://127.0.0.1:8554"
 # go2rtc generates this H.264 test pattern itself, so video tests need no camera.
 VIRTUAL_VIDEO_SOURCE_URL = "ffmpeg:virtual?video&size=720#video=h264"
+TEST_QDRANT_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_QDRANT_URL"
+DEFAULT_TEST_QDRANT_URL = "http://127.0.0.1:6333"
+# The size of every embedding the models produce, which tests store too.
+EMBEDDING_SIZE = 512
 NATS_SERVER_INSTALLATION_URL = (
     "https://docs.nats.io/running-a-nats-service/introduction/installation"
 )
@@ -129,3 +136,24 @@ async def go2rtc_client(go2rtc_api_url: str) -> AsyncIterator[Go2rtcClient]:
     client = Go2rtcClient(go2rtc_api_url)
     yield client
     await client.close()
+
+
+@pytest.fixture
+async def vector_index() -> AsyncIterator[VectorIndex]:
+    # Qdrant is shared between test runs, so a collection left with another vector size is
+    # replaced instead of failing every insert.
+    qdrant_url = os.environ.get(TEST_QDRANT_URL_ENVIRONMENT_VARIABLE, DEFAULT_TEST_QDRANT_URL)
+    qdrant_client = AsyncQdrantClient(url=qdrant_url)
+    for collection_name in COLLECTION_NAMES_BY_MODALITY.values():
+        if not await qdrant_client.collection_exists(collection_name):
+            continue
+        collection = await qdrant_client.get_collection(collection_name)
+        vectors = collection.config.params.vectors
+        if not isinstance(vectors, dict) and vectors is not None and vectors.size != EMBEDDING_SIZE:
+            await qdrant_client.delete_collection(collection_name)
+    connected_vector_index = VectorIndex(qdrant_client)
+    await connected_vector_index.ensure_collections(
+        dict.fromkeys(EmbeddingModality, EMBEDDING_SIZE)
+    )
+    yield connected_vector_index
+    await connected_vector_index.close()

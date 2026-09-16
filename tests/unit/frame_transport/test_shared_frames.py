@@ -1,6 +1,7 @@
 import time
 
 import numpy as np
+import pytest
 
 from specter.frame_transport.shared_frames import SharedFrameReader, SharedFrameWriter
 
@@ -71,3 +72,24 @@ def test_stale_region_is_replaced_when_camera_starts_again() -> None:
         second_writer.close()
 
     assert read_image is not None
+
+
+def test_attaching_fails_when_region_is_smaller_than_the_frame() -> None:
+    frame_writer = SharedFrameWriter(build_camera_id(), WIDTH_PIXELS, HEIGHT_PIXELS)
+    try:
+        with pytest.raises(FileNotFoundError):
+            SharedFrameReader(frame_writer.name, WIDTH_PIXELS * 4, HEIGHT_PIXELS * 4)
+    finally:
+        frame_writer.close()
+
+
+def test_writer_reports_its_frame_size() -> None:
+    frame_writer = SharedFrameWriter(build_camera_id(), WIDTH_PIXELS, HEIGHT_PIXELS)
+    try:
+        matches_own_size = frame_writer.matches_size(WIDTH_PIXELS, HEIGHT_PIXELS)
+        matches_other_size = frame_writer.matches_size(HEIGHT_PIXELS, WIDTH_PIXELS)
+    finally:
+        frame_writer.close()
+
+    assert matches_own_size
+    assert not matches_other_size

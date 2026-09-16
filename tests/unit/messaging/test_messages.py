@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from specter.entities.cameras import CameraStatus
+from specter.entities.targets import EmbeddingModality
 from specter.messaging.messages import (
     CameraStatusChangedMessage,
     MatchConfirmedMessage,
@@ -21,6 +22,7 @@ def build_match_confirmed_message() -> MatchConfirmedMessage:
         track_id=17,
         watchlist_id="watchlist_visitors",
         target_id="target_jane",
+        modality=EmbeddingModality.FACE,
         similarity_ratio=0.86,
         margin_ratio=0.31,
         threshold_ratio=0.78,

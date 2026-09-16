@@ -7,6 +7,7 @@ from specter.core.errors import NotFoundError
 from specter.entities.alerts import AlertReview, Disposition, IdentityMatchAlert, RuleAlert
 from specter.entities.geometry import NormalizedBoundingBox
 from specter.entities.rules import CrossingDirection, RuleKind
+from specter.entities.targets import EmbeddingModality
 from specter.storage.alerts import (
     AlertFilter,
     AlertPosition,
@@ -35,6 +36,7 @@ def build_identity_match_alert(
         track_id=17,
         watchlist_id="watchlist_visitors",
         target_id="target_jane",
+        modality=EmbeddingModality.FACE,
         similarity_ratio=0.86,
         margin_ratio=0.31,
         object_class="person",
@@ -51,6 +53,15 @@ def test_identity_match_alert_is_unchanged_when_saved_and_loaded() -> None:
     save_alert(alert)
 
     assert get_alert("alert_1") == alert
+
+
+def test_alert_is_saved_once_when_the_same_alert_is_saved_again() -> None:
+    alert = build_identity_match_alert("alert_redelivered")
+
+    save_alert(alert)
+    save_alert(replace(alert, similarity_ratio=0.5))
+
+    assert get_alert("alert_redelivered") == alert
 
 
 def test_rule_alert_is_unchanged_when_saved_and_loaded() -> None:

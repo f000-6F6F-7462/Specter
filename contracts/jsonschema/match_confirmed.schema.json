@@ -1,5 +1,14 @@
 {
   "$defs": {
+    "EmbeddingModality": {
+      "description": "What an embedding describes.",
+      "enum": [
+        "face",
+        "appearance"
+      ],
+      "title": "EmbeddingModality",
+      "type": "string"
+    },
     "MessageBoundingBox": {
       "additionalProperties": false,
       "description": "A bounding box as fractions of the frame's width and height.",
@@ -69,6 +78,9 @@
       "title": "Message Id",
       "type": "string"
     },
+    "modality": {
+      "$ref": "#/$defs/EmbeddingModality"
+    },
     "object_class": {
       "title": "Object Class",
       "type": "string"
@@ -93,7 +105,7 @@
       "title": "Similarity Ratio",
       "type": "number"
     },
-    "snapshot_url": {
+    "snapshot_path": {
       "anyOf": [
         {
           "type": "string"
@@ -103,7 +115,7 @@
         }
       ],
       "default": null,
-      "title": "Snapshot Url"
+      "title": "Snapshot Path"
     },
     "target_id": {
       "title": "Target Id",
@@ -132,6 +144,7 @@
     "track_id",
     "watchlist_id",
     "target_id",
+    "modality",
     "similarity_ratio",
     "margin_ratio",
     "threshold_ratio",

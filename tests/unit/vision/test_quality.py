@@ -5,6 +5,7 @@ from specter.vision.quality import (
     RUNTIME_QUALITY_THRESHOLDS,
     QualityThresholds,
     assess_quality,
+    score_quality,
 )
 
 GOOD_REPORT = QualityReport(
@@ -50,3 +51,23 @@ def test_every_failed_limit_is_reported_when_several_fail() -> None:
         RejectionReason.TOO_SMALL,
         RejectionReason.EXTREME_POSE,
     )
+
+
+def test_sharp_frontal_face_scores_higher_than_blurry_one() -> None:
+    blurry_report = replace(GOOD_REPORT, blur_ratio=0.7)
+
+    assert score_quality(GOOD_REPORT) > score_quality(blurry_report)
+
+
+def test_turned_face_scores_lower_than_frontal_one() -> None:
+    turned_report = replace(GOOD_REPORT, yaw_degrees=60.0)
+
+    assert score_quality(turned_report) < score_quality(GOOD_REPORT)
+
+
+def test_score_stays_within_ratio_bounds_when_face_is_perfect() -> None:
+    perfect_report = replace(
+        GOOD_REPORT, detection_score_ratio=1.0, blur_ratio=0.0, yaw_degrees=0.0
+    )
+
+    assert score_quality(perfect_report) == 1.0

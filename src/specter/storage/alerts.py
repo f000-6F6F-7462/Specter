@@ -15,6 +15,7 @@ from specter.entities.alerts import (
 )
 from specter.entities.geometry import NormalizedBoundingBox
 from specter.entities.rules import CrossingDirection, RuleKind
+from specter.entities.targets import EmbeddingModality
 from specter.storage.columns import format_utc_timestamp, parse_utc_timestamp
 from specter.storage.tables import IdentityMatchAlertRecord, RuleAlertRecord
 
@@ -41,16 +42,17 @@ class AlertFilter:
 
 
 def save_alert(alert: Alert) -> None:
-    """Inserts a new alert."""
+    """Inserts the alert, unless an alert with its id was already saved."""
     match alert:
         case IdentityMatchAlert():
             IdentityMatchAlertRecord.insert(
                 **_build_shared_values(alert),
                 watchlist_id=alert.watchlist_id,
                 target_id=alert.target_id,
+                modality=alert.modality.value,
                 similarity_ratio=alert.similarity_ratio,
                 margin_ratio=alert.margin_ratio,
-            ).execute()
+            ).on_conflict_ignore().execute()
         case RuleAlert():
             RuleAlertRecord.insert(
                 **_build_shared_values(alert),
@@ -61,7 +63,7 @@ def save_alert(alert: Alert) -> None:
                 crossing_direction=(
                     alert.crossing_direction.value if alert.crossing_direction else None
                 ),
-            ).execute()
+            ).on_conflict_ignore().execute()
 
 
 def find_alert(alert_id: str) -> Alert | None:
@@ -208,6 +210,7 @@ def _build_identity_match_alert(record: IdentityMatchAlertRecord) -> IdentityMat
         track_id=record.track_id,
         watchlist_id=record.watchlist_id,
         target_id=record.target_id,
+        modality=EmbeddingModality(record.modality),
         similarity_ratio=record.similarity_ratio,
         margin_ratio=record.margin_ratio,
         object_class=record.object_class,

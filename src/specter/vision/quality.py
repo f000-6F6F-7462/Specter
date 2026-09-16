@@ -1,5 +1,6 @@
 """Quality gate for face crops, shared by enrollment and real-time matching."""
 
+import math
 from dataclasses import dataclass
 
 from specter.entities.targets import QualityReport, RejectionReason
@@ -25,6 +26,10 @@ RUNTIME_QUALITY_THRESHOLDS = QualityThresholds(
     minimum_face_height_pixels=32,
     maximum_absolute_yaw_degrees=55.0,
 )
+
+
+# A face this tall already carries all the detail that the 112-pixel embedding model can use.
+FULL_DETAIL_FACE_HEIGHT_PIXELS = 112
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,3 +58,14 @@ def assess_quality(report: QualityReport, thresholds: QualityThresholds) -> Qual
     return QualityVerdict(
         has_passed=not rejection_reasons, rejection_reasons=tuple(rejection_reasons)
     )
+
+
+def score_quality(report: QualityReport) -> float:
+    """Returns how useful the face crop is for recognition, from 0 to 1, to rank crops of a face.
+
+    Sharpness, a frontal pose, detail and the detector's confidence all raise the score, and any one
+    of them near its worst drags the whole score down.
+    """
+    size_ratio = min(report.face_height_pixels / FULL_DETAIL_FACE_HEIGHT_PIXELS, 1.0)
+    pose_ratio = max(math.cos(math.radians(report.yaw_degrees)), 0.0)
+    return report.detection_score_ratio * (1.0 - report.blur_ratio) * pose_ratio * size_ratio

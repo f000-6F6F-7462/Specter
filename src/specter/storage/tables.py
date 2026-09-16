@@ -48,7 +48,8 @@ class WatchlistRecord(Model):
     name = CharField()
     target_type = CharField()
     kind = CharField()
-    match_threshold_ratio = FloatField()
+    face_match_threshold_ratio = FloatField()
+    appearance_match_threshold_ratio = FloatField()
     metadata_json = TextField()
     created_at = CharField()
 
@@ -166,6 +167,7 @@ class IdentityMatchAlertRecord(Model):
     track_id = IntegerField()
     watchlist_id = CharField()
     target_id = CharField()
+    modality = CharField()
     similarity_ratio = FloatField()
     margin_ratio = FloatField()
     object_class = CharField()
