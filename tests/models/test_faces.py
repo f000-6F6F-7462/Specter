@@ -42,7 +42,9 @@ def embed_faces(
 ) -> list[np.ndarray]:
     aligned_faces = [FaceEmbedder.align(image, face) for face in faces]
     all_outputs = load_model_session(model_id).run(FaceEmbedder.build_input_tensor(aligned_faces))
-    return [FaceEmbedder.read_embedding(outputs) for outputs in all_outputs]
+    embeddings = [FaceEmbedder.read_embedding(outputs) for outputs in all_outputs]
+    assert all(embedding is not None for embedding in embeddings)
+    return [embedding for embedding in embeddings if embedding is not None]
 
 
 def find_nearest_face(faces: list[FaceDetection], center_x: float, center_y: float) -> int:

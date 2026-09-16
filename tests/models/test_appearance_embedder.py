@@ -60,6 +60,9 @@ def test_shifted_crop_is_closer_than_another_person_when_people_are_embedded(
         AppearanceEmbedder.read_embedding(outputs) for outputs in all_outputs
     )
 
+    assert person is not None
+    assert shifted_person is not None
+    assert other_person is not None
     assert float(person @ shifted_person) > float(person @ other_person)
 
 
@@ -80,4 +83,6 @@ def test_ncnn_conversion_gives_the_same_embedding_when_compared_with_onnx(
         load_model_session("osnet_x0_25_ncnn").run(model_input)[0]
     )
 
+    assert onnx_embedding is not None
+    assert ncnn_embedding is not None
     assert float(onnx_embedding @ ncnn_embedding) > 0.99

@@ -22,7 +22,6 @@ from specter.entities.cameras import (
     DesiredState,
     SamplingMode,
     SamplingSettings,
-    TransportProtocol,
 )
 from specter.messaging.messages import ChangeKind, EntityKind
 from specter.messaging.shared_state import CameraHealthBucket
@@ -53,7 +52,6 @@ class CameraCreateBody(RequestModel):
     name: str = Field(min_length=1)
     source_url: str = Field(min_length=1)
     credentials: CredentialsBody | None = None
-    transport: TransportProtocol = TransportProtocol.TCP
     watchlist_ids: list[str] = Field(default_factory=list)
     # Empty means objects of every class are analyzed.
     detection_classes: list[str] = Field(default_factory=list)
@@ -70,7 +68,6 @@ class CameraUpdateBody(RequestModel):
     name: str | None = Field(default=None, min_length=1)
     source_url: str | None = Field(default=None, min_length=1)
     credentials: CredentialsBody | None = None
-    transport: TransportProtocol | None = None
     watchlist_ids: list[str] | None = None
     detection_classes: list[str] | None = None
     sampling: SamplingBody | None = None
@@ -86,7 +83,6 @@ class CameraResponse(BaseModel):
     source_url: str
     username: str | None
     has_password: bool
-    transport: TransportProtocol
     watchlist_ids: list[str]
     detection_classes: list[str]
     sampling: SamplingBody
@@ -108,7 +104,6 @@ async def create_camera(
         name=body.name,
         source_url=body.source_url,
         credentials=build_credentials(body.credentials),
-        transport=body.transport,
         watchlist_ids=tuple(body.watchlist_ids),
         detection_classes=frozenset(body.detection_classes),
         sampling=build_sampling_settings(body.sampling),
@@ -153,7 +148,6 @@ async def update_camera(
         credentials=(
             build_credentials(body.credentials) if "credentials" in changes else camera.credentials
         ),
-        transport=body.transport or camera.transport,
         watchlist_ids=(
             camera.watchlist_ids if body.watchlist_ids is None else tuple(body.watchlist_ids)
         ),
@@ -239,7 +233,6 @@ async def build_camera_response(services: ApiServices, camera: Camera) -> Camera
         source_url=camera.source_url,
         username=None if camera.credentials is None else camera.credentials.username,
         has_password=camera.credentials is not None,
-        transport=camera.transport,
         watchlist_ids=list(camera.watchlist_ids),
         detection_classes=sorted(camera.detection_classes),
         sampling=SamplingBody(

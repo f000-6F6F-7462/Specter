@@ -5,6 +5,7 @@ import logging
 import sys
 import time
 from asyncio.subprocess import Process
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -30,6 +31,9 @@ from specter.storage.database import DatabaseThread
 logger = logging.getLogger(__name__)
 
 RECONCILE_INTERVAL_SECONDS = 30.0
+# A camera that loses its stream is often the first sign that go2rtc restarted, so it triggers a
+# reconcile at once; this gap keeps many cameras reconnecting together from repeating it.
+RECONNECTING_RECONCILE_INTERVAL_SECONDS = 10.0
 HEALTH_CHECK_INTERVAL_SECONDS = 2.0
 # A camera process refreshes its health every few seconds, so a longer silence means it froze.
 FROZEN_AFTER_SECONDS = 15.0
@@ -75,11 +79,16 @@ class CameraSupervisor:
     """
 
     def __init__(
-        self, camera: Camera, message_bus: MessageBus, health_bucket: CameraHealthBucket
+        self,
+        camera: Camera,
+        message_bus: MessageBus,
+        health_bucket: CameraHealthBucket,
+        handle_reconnecting: Callable[[], None],
     ) -> None:
         self._camera = camera
         self._message_bus = message_bus
         self._health_bucket = health_bucket
+        self._handle_reconnecting = handle_reconnecting
         self._stop_requested = asyncio.Event()
         self._published_status: CameraStatus | None = None
 
@@ -153,6 +162,11 @@ class CameraSupervisor:
             ):
                 last_reported_at = report.reported_at
                 silence_deadline = time.monotonic() + FROZEN_AFTER_SECONDS
+                if (
+                    report.status is CameraStatus.RECONNECTING
+                    and self._published_status is not CameraStatus.RECONNECTING
+                ):
+                    self._handle_reconnecting()
                 await self._publish_status(report.status)
             if time.monotonic() > silence_deadline:
                 return ProcessEnding.FROZEN
@@ -201,8 +215,9 @@ class SupervisedCamera:
 class CameraManager:
     """Keeps a process running for every camera that should run, and for no other camera.
 
-    A camera configuration change triggers a reconcile at once. A periodic reconcile also brings
-    back streams that go2rtc lost when it restarted, and catches changes whose event was missed.
+    A camera configuration change triggers a reconcile at once, and so does a camera that starts
+    reconnecting, since go2rtc may have restarted and lost its streams. A periodic reconcile also
+    catches changes whose event was missed.
     """
 
     def __init__(
@@ -221,6 +236,7 @@ class CameraManager:
         self._go2rtc_client = go2rtc_client
         self._supervised_cameras: dict[str, SupervisedCamera] = {}
         self._reconcile_requested = asyncio.Event()
+        self._last_reconnecting_reconcile_at: float | None = None
 
     async def run(self, shutdown_requested: asyncio.Event) -> None:
         """Reconciles camera processes until shutdown is requested, then stops them all."""
@@ -238,6 +254,16 @@ class CameraManager:
     async def _handle_configuration_change(self, message: ConfigurationChangedMessage) -> None:
         if message.entity_kind is EntityKind.CAMERA:
             self._reconcile_requested.set()
+
+    def _request_reconcile_for_reconnecting_camera(self) -> None:
+        now = time.monotonic()
+        if (
+            self._last_reconnecting_reconcile_at is not None
+            and now - self._last_reconnecting_reconcile_at < RECONNECTING_RECONCILE_INTERVAL_SECONDS
+        ):
+            return
+        self._last_reconnecting_reconcile_at = now
+        self._reconcile_requested.set()
 
     async def _wait_for_next_reconcile(self, shutdown_requested: asyncio.Event) -> None:
         reconcile_requested = asyncio.wait_for(
@@ -283,7 +309,12 @@ class CameraManager:
                 self._start_camera(camera)
 
     def _start_camera(self, camera: Camera) -> None:
-        supervisor = CameraSupervisor(camera, self._message_bus, self._health_bucket)
+        supervisor = CameraSupervisor(
+            camera,
+            self._message_bus,
+            self._health_bucket,
+            self._request_reconcile_for_reconnecting_camera,
+        )
         self._supervised_cameras[camera.id] = SupervisedCamera(
             supervisor=supervisor, task=asyncio.create_task(supervisor.run())
         )

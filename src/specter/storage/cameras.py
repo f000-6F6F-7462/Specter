@@ -13,7 +13,6 @@ from specter.entities.cameras import (
     DesiredState,
     SamplingMode,
     SamplingSettings,
-    TransportProtocol,
 )
 from specter.storage.columns import dump_json, format_utc_timestamp, load_json
 from specter.storage.credentials import CredentialCipher
@@ -128,7 +127,6 @@ def _build_record_values(camera: Camera, cipher: CredentialCipher | None) -> dic
         "source_url": camera.source_url,
         "credentials_username": camera.credentials.username if camera.credentials else None,
         "credentials_encrypted_password": _encrypt_password(camera.credentials, cipher),
-        "transport": camera.transport.value,
         "detection_classes_json": dump_json(sorted(camera.detection_classes)),
         "sampling_mode": camera.sampling.mode.value,
         "target_fps": camera.sampling.target_fps,
@@ -163,7 +161,6 @@ def _build_cameras(
             name=record.name,
             source_url=record.source_url,
             credentials=_build_credentials(record, cipher) if include_credentials else None,
-            transport=TransportProtocol(record.transport),
             watchlist_ids=watchlist_ids_by_camera_id.get(record.id, ()),
             detection_classes=frozenset(load_json(record.detection_classes_json)),
             sampling=SamplingSettings(

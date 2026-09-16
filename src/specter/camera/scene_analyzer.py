@@ -74,7 +74,10 @@ class SceneAnalyzer:
             frame.captured_at,
         )
         now_seconds = frame.presentation_time_seconds
-        self._rule_engine.forget_tracks(tracking_update.ended_track_ids)
+        if tracking_update.is_timeline_restarted:
+            self._rule_engine.carry_over_stays(tracking_update.ended_track_ids, now_seconds)
+        else:
+            self._rule_engine.forget_tracks(tracking_update.ended_track_ids)
         for firing in self._rule_engine.evaluate(
             tracking_update.tracks, frame.width_pixels, frame.height_pixels, now_seconds
         ):

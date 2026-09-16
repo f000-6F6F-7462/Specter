@@ -22,13 +22,6 @@ class SamplingMode(StrEnum):
     FIXED = "fixed"
 
 
-class TransportProtocol(StrEnum):
-    """Network transport for the camera's stream."""
-
-    TCP = "tcp"
-    UDP = "udp"
-
-
 class DesiredState(StrEnum):
     """Whether the owner wants the camera to run."""
 
@@ -79,7 +72,6 @@ class Camera:
     name: str
     source_url: str
     credentials: CameraCredentials | None = None
-    transport: TransportProtocol = TransportProtocol.TCP
     watchlist_ids: tuple[str, ...] = ()
     # An empty set means objects of every class are analyzed.
     detection_classes: frozenset[str] = frozenset()

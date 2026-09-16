@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -79,14 +80,18 @@ class StreamReader:
         self._stop_requested.set()
         await asyncio.to_thread(self._thread.join, READER_STOP_TIMEOUT_SECONDS)
 
-    async def next_frame(self) -> Frame:
-        """Waits for a frame newer than the one returned last, and returns it."""
+    async def next_frame(self, is_due: Callable[[float], bool]) -> Frame:
+        """Waits for a newer frame whose timestamp is due, and returns it.
+
+        Converting a frame to an image costs more than decoding it, so frames that are not due, or
+        that a newer frame replaced, are dropped before they are converted.
+        """
         decoded_frame = self._take_newer_frame()
-        while decoded_frame is None:
-            await self._frame_available.wait()
-            self._frame_available.clear()
+        while decoded_frame is None or not is_due(decoded_frame.presentation_time_seconds):
+            if decoded_frame is None:
+                await self._frame_available.wait()
+                self._frame_available.clear()
             decoded_frame = self._take_newer_frame()
-        # Converting only the frames that analysis takes spares the work for every replaced frame.
         image = await asyncio.to_thread(self._convert_to_image, decoded_frame.video_frame)
         return Frame(
             camera_id=self._camera_id,

@@ -76,3 +76,18 @@ def test_frame_is_admitted_when_timestamps_start_over_after_reconnecting() -> No
 
     assert before_reconnect is SamplingDecision.PROCESS
     assert after_reconnect is SamplingDecision.PROCESS
+
+
+def test_frame_is_due_only_once_the_rate_interval_has_passed() -> None:
+    sampler = FrameSampler(SamplingSettings(target_fps=10.0, is_motion_gating_enabled=False))
+    sampler.decide(build_frame(1.0))
+
+    assert not sampler.is_due(1.05)
+    assert sampler.is_due(1.1)
+
+
+def test_frame_is_due_when_timestamps_start_over_after_reconnecting() -> None:
+    sampler = FrameSampler(SamplingSettings(target_fps=10.0, is_motion_gating_enabled=False))
+    sampler.decide(build_frame(500.0))
+
+    assert sampler.is_due(0.0)

@@ -34,6 +34,6 @@ class AppearanceEmbedder:
         return np.ascontiguousarray(normalized_batch.transpose(0, 3, 1, 2), dtype=np.float32)
 
     @staticmethod
-    def read_embedding(outputs: Sequence[Tensor]) -> Embedding:
-        """Returns one crop's unit-length embedding from the model's outputs."""
+    def read_embedding(outputs: Sequence[Tensor]) -> Embedding | None:
+        """Returns one crop's unit-length embedding, or None when the output has no direction."""
         return normalize_embedding(outputs[0])

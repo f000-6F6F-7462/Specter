@@ -130,3 +130,53 @@ def test_point_is_inside_polygon_only_when_it_lies_within_its_edges() -> None:
 
     assert is_inside_polygon((0.2, 0.2), triangle)
     assert not is_inside_polygon((0.8, 0.8), triangle)
+
+
+def test_person_still_in_zone_does_not_fire_again_when_stream_reconnects() -> None:
+    engine = RuleEngine()
+    engine.configure([LEFT_HALF_ZONE], [build_dwell_rule(minimum_dwell_seconds=0.0)])
+    before_reconnect = evaluate_rule_ids(engine, build_track(200, track_id=1), 100.0)
+
+    engine.carry_over_stays([1], now_seconds=0.0)
+    after_reconnect = evaluate_rule_ids(engine, build_track(205, track_id=7), 0.5)
+
+    assert (before_reconnect, after_reconnect) == (["rule_left_dwell"], [])
+
+
+def test_dwell_continues_across_a_reconnect_when_the_person_stays() -> None:
+    engine = RuleEngine()
+    engine.configure([LEFT_HALF_ZONE], [build_dwell_rule(minimum_dwell_seconds=5.0)])
+    evaluate_rule_ids(engine, build_track(200, track_id=1), 100.0)
+    evaluate_rule_ids(engine, build_track(200, track_id=1), 103.0)
+
+    engine.carry_over_stays([1], now_seconds=0.0)
+    # The time the stream was down does not count as dwell.
+    first_firings = engine.evaluate(
+        [build_track(200, track_id=7)], FRAME_WIDTH_PIXELS, FRAME_HEIGHT_PIXELS, 0.5
+    )
+    later_firings = engine.evaluate(
+        [build_track(200, track_id=7)], FRAME_WIDTH_PIXELS, FRAME_HEIGHT_PIXELS, 2.5
+    )
+
+    assert first_firings == []
+    assert [firing.dwell_seconds for firing in later_firings] == [5.0]
+
+
+def test_person_elsewhere_in_zone_fires_after_a_reconnect() -> None:
+    engine = RuleEngine()
+    engine.configure([LEFT_HALF_ZONE], [build_dwell_rule(minimum_dwell_seconds=0.0)])
+    evaluate_rule_ids(engine, build_track(100, track_id=1), 100.0)
+
+    engine.carry_over_stays([1], now_seconds=0.0)
+
+    assert evaluate_rule_ids(engine, build_track(400, track_id=7), 0.5) == ["rule_left_dwell"]
+
+
+def test_carried_stay_expires_when_nobody_appears_in_time() -> None:
+    engine = RuleEngine()
+    engine.configure([LEFT_HALF_ZONE], [build_dwell_rule(minimum_dwell_seconds=0.0)])
+    evaluate_rule_ids(engine, build_track(200, track_id=1), 100.0)
+
+    engine.carry_over_stays([1], now_seconds=0.0)
+
+    assert evaluate_rule_ids(engine, build_track(200, track_id=7), 30.0) == ["rule_left_dwell"]

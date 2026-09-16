@@ -1,10 +1,13 @@
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose -f deploy/compose.base.yaml
+# The development settings keep data, secrets and models inside the repository.
+DEVELOPMENT_CONFIG := config/specter.dev.yaml
+SPECTER := uv run specter --config $(DEVELOPMENT_CONFIG)
 
 .PHONY: help setup install lock upgrade-dependencies format lint type-check test \
 	test-integration test-hardware test-models check ci contracts services-up services-down models migrate \
-	run-api run-camera-manager run-camera run-detector clean require-uv
+	run-api run-camera-manager run-camera run-detector clean clean-development-data require-uv
 
 ##@ Setup
 
@@ -70,26 +73,29 @@ models:  ## Export and download every model into ./models (Docker; torch stays i
 		--volume "$(CURDIR)/src/specter/inference/model_manifest.yaml:/manifest.yaml:ro" \
 		specter-model-export
 
-migrate: require-uv  ## Apply pending database migrations
-	uv run specter migrate
+migrate: require-uv  ## Apply pending database migrations to the development database
+	$(SPECTER) migrate
 
-run-api: require-uv  ## Run the local HTTP API
-	uv run specter api
+run-api: require-uv migrate  ## Run the local HTTP API with the development settings
+	$(SPECTER) api
 
-run-camera-manager: require-uv  ## Run the camera manager
-	uv run specter camera-manager
+run-camera-manager: require-uv migrate  ## Run the camera manager with the development settings
+	$(SPECTER) camera-manager
 
 run-camera: require-uv  ## Run one camera process: make run-camera CAMERA_ID=<id>
 	$(if $(CAMERA_ID),,$(error CAMERA_ID is required: make run-camera CAMERA_ID=front_door))
-	uv run specter camera --camera-id $(CAMERA_ID)
+	$(SPECTER) camera --camera-id $(CAMERA_ID)
 
-run-detector: require-uv  ## Run the detector
-	uv run specter detector
+run-detector: require-uv migrate  ## Run the detector with the development settings
+	$(SPECTER) detector
 
 ##@ Maintenance
 
 clean:  ## Remove tool caches
 	rm -rf .pytest_cache .mypy_cache .ruff_cache
+
+clean-development-data:  ## Delete the development database, evidence, images and secrets
+	rm -rf .dev
 
 help:  ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} \

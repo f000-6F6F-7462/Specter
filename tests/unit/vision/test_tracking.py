@@ -82,3 +82,4 @@ def test_every_track_ends_when_stream_time_jumps_backwards() -> None:
     update = tracker.update([build_person(100)], 0.0, captured_at(3))
 
     assert len(update.ended_track_ids) == 1
+    assert update.is_timeline_restarted

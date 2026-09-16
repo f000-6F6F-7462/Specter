@@ -50,7 +50,14 @@ def create_inference_backend(detector_settings: DetectorSettings) -> InferenceBa
             return NcnnBackend()
 
 
-def normalize_embedding(model_output: Tensor) -> Embedding:
-    """Returns a model's embedding output scaled to unit length."""
+def normalize_embedding(model_output: Tensor) -> Embedding | None:
+    """Returns a model's embedding output scaled to unit length.
+
+    Returns None for an output that has no direction, such as all zeros, or that holds non-finite
+    values; scaling it would store NaN vectors that match nothing and break similarity math.
+    """
     vector = np.asarray(model_output, dtype=np.float32).reshape(-1)
-    return vector / np.float32(np.linalg.norm(vector))
+    length = float(np.linalg.norm(vector))
+    if not np.isfinite(length) or length == 0.0:
+        return None
+    return vector / np.float32(length)
