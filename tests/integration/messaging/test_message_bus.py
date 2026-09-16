@@ -6,16 +6,18 @@ from functools import partial
 
 import nats
 import pytest
+from nats.errors import NoRespondersError
 from nats.js.api import RetentionPolicy, StreamConfig
 
 from specter.config.settings import MatchingSettings
-from specter.entities.cameras import CameraStatus
 from specter.entities.targets import EmbeddingModality, ImageStatus
 from specter.messaging.client import EnrollmentJobWorker, JobDelivery, MessageBus
 from specter.messaging.messages import (
-    CameraStatusChangedMessage,
+    ChangeKind,
+    ConfigurationChangedMessage,
     EnrollmentJobMessage,
     EnrollmentStatusChangedMessage,
+    EntityKind,
 )
 from specter.messaging.streams import EVENTS_STREAM, WorkQueueConsumerDefinition
 from specter.messaging.subjects import build_message_subject
@@ -86,31 +88,23 @@ async def test_message_is_stored_once_when_published_twice(
     assert stream_info.state.subjects == {subject: 1}
 
 
-async def test_latest_status_then_new_ones_are_delivered_when_subscribing_from_latest(
-    message_bus: MessageBus, unique_owner_id: str, unique_camera_id: str
+async def test_latest_change_then_new_ones_are_delivered_when_following_configuration(
+    message_bus: MessageBus, unique_owner_id: str
 ) -> None:
-    await message_bus.publish(
-        build_camera_status_message(unique_owner_id, unique_camera_id, CameraStatus.STARTING)
-    )
-    running_message = build_camera_status_message(
-        unique_owner_id, unique_camera_id, CameraStatus.RUNNING
-    )
-    await message_bus.publish(running_message)
-    received_messages: asyncio.Queue[CameraStatusChangedMessage] = asyncio.Queue()
+    await message_bus.publish(build_configuration_change(unique_owner_id, "camera_older"))
+    await message_bus.publish(build_configuration_change(unique_owner_id, "camera_latest"))
+    received_entity_ids: asyncio.Queue[str] = asyncio.Queue()
 
-    await message_bus.subscribe_from_latest(
-        build_message_subject(running_message), CameraStatusChangedMessage, received_messages.put
+    await message_bus.subscribe_to_configuration_changes(
+        partial(
+            record_owner_change, owner_id=unique_owner_id, received_entity_ids=received_entity_ids
+        )
     )
-    first_received = await asyncio.wait_for(received_messages.get(), DELIVERY_TIMEOUT_SECONDS)
-    await message_bus.publish(
-        build_camera_status_message(unique_owner_id, unique_camera_id, CameraStatus.STOPPED)
-    )
-    second_received = await asyncio.wait_for(received_messages.get(), DELIVERY_TIMEOUT_SECONDS)
+    first_received = await asyncio.wait_for(received_entity_ids.get(), DELIVERY_TIMEOUT_SECONDS)
+    await message_bus.publish(build_configuration_change(unique_owner_id, "camera_newer"))
+    second_received = await asyncio.wait_for(received_entity_ids.get(), DELIVERY_TIMEOUT_SECONDS)
 
-    assert (first_received.status, second_received.status) == (
-        CameraStatus.RUNNING,
-        CameraStatus.STOPPED,
-    )
+    assert (first_received, second_received) == ("camera_latest", "camera_newer")
 
 
 async def test_job_is_delivered_again_until_handler_succeeds(
@@ -187,12 +181,25 @@ async def test_job_is_dropped_without_handling_when_it_cannot_be_parsed(
     assert await count_unfinished_jobs(nats_server_url, job_consumer) == 0
 
 
-def build_camera_status_message(
-    owner_id: str, camera_id: str, status: CameraStatus
-) -> CameraStatusChangedMessage:
-    return CameraStatusChangedMessage(
-        occurred_at=datetime.now(UTC), owner_id=owner_id, camera_id=camera_id, status=status
+def build_configuration_change(owner_id: str, entity_id: str) -> ConfigurationChangedMessage:
+    return ConfigurationChangedMessage(
+        occurred_at=datetime.now(UTC),
+        owner_id=owner_id,
+        entity_kind=EntityKind.CAMERA,
+        entity_id=entity_id,
+        change_kind=ChangeKind.UPDATED,
     )
+
+
+async def record_owner_change(
+    message: ConfigurationChangedMessage,
+    *,
+    owner_id: str,
+    received_entity_ids: asyncio.Queue[str],
+) -> None:
+    # Every owner's latest change is delivered, including those left by earlier test runs.
+    if message.owner_id == owner_id:
+        await received_entity_ids.put(message.entity_id)
 
 
 def build_enrollment_job() -> EnrollmentJobMessage:
@@ -239,3 +246,23 @@ async def count_unfinished_jobs(nats_server_url: str, consumer: WorkQueueConsume
         await connection.close()
     unfinished_job_count: int = consumer_info.num_pending + consumer_info.num_ack_pending
     return unfinished_job_count
+
+
+async def echo(raw_request: bytes) -> bytes:
+    return raw_request.upper()
+
+
+async def test_reply_arrives_when_a_server_answers_the_request(message_bus: MessageBus) -> None:
+    subject = f"specter.tests.echo.{time.time_ns()}"
+    await message_bus.serve_requests(subject, "test_servers", echo)
+
+    reply = await message_bus.request(subject, b"hello", DELIVERY_TIMEOUT_SECONDS)
+
+    assert reply == b"HELLO"
+
+
+async def test_request_fails_at_once_when_no_server_is_subscribed(message_bus: MessageBus) -> None:
+    with pytest.raises(NoRespondersError):
+        await message_bus.request(
+            f"specter.tests.nobody.{time.time_ns()}", b"hello", DELIVERY_TIMEOUT_SECONDS
+        )

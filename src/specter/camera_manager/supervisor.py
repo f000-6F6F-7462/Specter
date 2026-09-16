@@ -23,7 +23,6 @@ from specter.messaging.messages import (
     EntityKind,
 )
 from specter.messaging.shared_state import CameraHealthBucket
-from specter.messaging.subjects import OwnerEvent, build_all_owners_subject
 from specter.storage.cameras import list_cameras_to_run
 from specter.storage.credentials import CredentialCipher
 from specter.storage.database import DatabaseThread
@@ -225,10 +224,8 @@ class CameraManager:
 
     async def run(self, shutdown_requested: asyncio.Event) -> None:
         """Reconciles camera processes until shutdown is requested, then stops them all."""
-        await self._message_bus.subscribe_from_latest(
-            build_all_owners_subject(OwnerEvent.CONFIGURATION_CHANGED),
-            ConfigurationChangedMessage,
-            self._handle_configuration_change,
+        await self._message_bus.subscribe_to_configuration_changes(
+            self._handle_configuration_change
         )
         try:
             while not shutdown_requested.is_set():
@@ -258,7 +255,9 @@ class CameraManager:
             logger.exception("cannot reconcile camera processes")
 
     async def _reconcile(self) -> None:
-        cameras = await self._database_thread.run(partial(list_cameras_to_run, self._cipher))
+        cameras = await asyncio.get_running_loop().run_in_executor(
+            self._database_thread.executor, partial(list_cameras_to_run, self._cipher)
+        )
         cameras_to_run = {camera.id: camera for camera in cameras}
         for camera_id, supervised_camera in list(self._supervised_cameras.items()):
             is_outdated = cameras_to_run.get(camera_id) != supervised_camera.supervisor.camera

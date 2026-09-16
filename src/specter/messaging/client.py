@@ -16,7 +16,11 @@ from nats.js.errors import BucketNotFoundError, NotFoundError
 from nats.js.kv import KeyValue
 from pydantic import ValidationError
 
-from specter.messaging.messages import EnrollmentJobMessage, SpecterMessage
+from specter.messaging.messages import (
+    ConfigurationChangedMessage,
+    EnrollmentJobMessage,
+    SpecterMessage,
+)
 from specter.messaging.streams import (
     ENROLLMENT_JOBS_CONSUMER,
     STREAM_DEFINITIONS,
@@ -24,7 +28,7 @@ from specter.messaging.streams import (
     WorkQueueConsumerDefinition,
     build_key_value_bucket_definitions,
 )
-from specter.messaging.subjects import build_message_subject
+from specter.messaging.subjects import OwnerEvent, build_all_owners_subject, build_message_subject
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,8 @@ JOB_FETCH_TIMEOUT_SECONDS = 1.0
 # JetStream stores a message once per id within the duplicate window, so a retried publish that
 # already reached the server is not stored twice.
 MESSAGE_ID_HEADER = "Nats-Msg-Id"
+
+type RequestAnswer = Callable[[bytes], Awaitable[bytes]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +61,7 @@ class MessageBus:
         self._client_name = client_name
         self._connection = NatsConnection()
         self._jetstream = self._connection.jetstream()
+        self._request_tasks: set[asyncio.Task[None]] = set()
 
     @property
     def is_connected(self) -> bool:
@@ -108,24 +115,18 @@ class MessageBus:
             headers={MESSAGE_ID_HEADER: message.message_id},
         )
 
-    async def subscribe_from_latest[MessageT: SpecterMessage](
-        self,
-        subject: str,
-        message_type: type[MessageT],
-        handle_message: Callable[[MessageT], Awaitable[None]],
+    async def subscribe_to_configuration_changes(
+        self, handle_change: Callable[[ConfigurationChangedMessage], Awaitable[None]]
     ) -> None:
-        """Delivers the latest stored message of every matching subject, then each new one.
+        """Delivers every owner's latest configuration change, then each new one.
 
-        Suits state such as configuration changes, where a process that starts needs only the
-        latest message per subject. A message that fails to parse, or whose handler raises, is
-        logged and skipped so a single bad message cannot stop the subscription.
+        A process that starts needs only the latest change per owner to catch up. A message that
+        fails to parse, or whose handler raises, is logged and skipped so a single bad message
+        cannot stop the subscription.
         """
-        deliver = partial(
-            self._deliver_message, message_type=message_type, handle_message=handle_message
-        )
         await self._jetstream.subscribe(
-            subject,
-            cb=deliver,
+            build_all_owners_subject(OwnerEvent.CONFIGURATION_CHANGED),
+            cb=partial(self._deliver_configuration_change, handle_change=handle_change),
             ordered_consumer=True,
             deliver_policy=DeliverPolicy.LAST_PER_SUBJECT,
         )
@@ -140,6 +141,41 @@ class MessageBus:
             stream=consumer.stream_name,
             config=consumer.to_consumer_config(),
         )
+
+    async def request(self, subject: str, payload: bytes, timeout_seconds: float) -> bytes:
+        """Sends a request that one server answers, over core NATS without storing it.
+
+        The payload's format belongs to the flow that uses the subject, which also reads the reply.
+
+        Raises:
+            nats.errors.Error: No server is subscribed, or none answered in time.
+        """
+        raw_reply = await self._connection.request(subject, payload, timeout=timeout_seconds)
+        reply_payload: bytes = raw_reply.data
+        return reply_payload
+
+    async def serve_requests(self, subject: str, queue_group: str, answer: RequestAnswer) -> None:
+        """Answers requests on the subject, sharing them with every server in the queue group.
+
+        Each request is answered in its own task, so the answering side can gather requests that
+        arrive together. A request whose answer raises gets no reply, and its sender times out.
+        """
+        await self._connection.subscribe(
+            subject, queue=queue_group, cb=partial(self._start_answering, answer=answer)
+        )
+
+    async def _start_answering(self, raw_request: Msg, *, answer: RequestAnswer) -> None:
+        answer_task = asyncio.create_task(self._answer_request(raw_request, answer=answer))
+        # Holding the task keeps it from being garbage collected before it finishes.
+        self._request_tasks.add(answer_task)
+        answer_task.add_done_callback(self._request_tasks.discard)
+
+    @staticmethod
+    async def _answer_request(raw_request: Msg, *, answer: RequestAnswer) -> None:
+        try:
+            await raw_request.respond(await answer(raw_request.data))
+        except Exception:
+            logger.exception("failed to answer a request", extra={"subject": raw_request.subject})
 
     async def _declare_key_value_bucket(self, bucket: KeyValueBucketDefinition) -> None:
         try:
@@ -158,14 +194,13 @@ class MessageBus:
             )
 
     @staticmethod
-    async def _deliver_message[MessageT: SpecterMessage](
+    async def _deliver_configuration_change(
         raw_message: Msg,
         *,
-        message_type: type[MessageT],
-        handle_message: Callable[[MessageT], Awaitable[None]],
+        handle_change: Callable[[ConfigurationChangedMessage], Awaitable[None]],
     ) -> None:
         try:
-            await handle_message(message_type.model_validate_json(raw_message.data))
+            await handle_change(ConfigurationChangedMessage.model_validate_json(raw_message.data))
         except Exception:
             logger.exception("failed to handle a message", extra={"subject": raw_message.subject})
 

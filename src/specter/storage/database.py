@@ -1,7 +1,5 @@
 """The SQLite database, and the thread that all database work of a process runs on."""
 
-import asyncio
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -44,9 +42,10 @@ class DatabaseThread:
         self._database = database
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=DATABASE_THREAD_NAME)
 
-    async def run[ResultT](self, operation: Callable[[], ResultT]) -> ResultT:
-        """Runs the operation on the database thread and returns its result."""
-        return await asyncio.get_running_loop().run_in_executor(self._executor, operation)
+    @property
+    def executor(self) -> ThreadPoolExecutor:
+        """The executor of the database thread, for ``loop.run_in_executor``."""
+        return self._executor
 
     def close(self) -> None:
         """Waits for pending work, closes the thread's connection and stops the thread."""

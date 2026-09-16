@@ -3,7 +3,7 @@
 COMPOSE := docker compose -f deploy/compose.base.yaml
 
 .PHONY: help setup install lock upgrade-dependencies format lint type-check test \
-	test-integration test-hardware check ci contracts services-up services-down migrate \
+	test-integration test-hardware test-models check ci contracts services-up services-down models migrate \
 	run-api run-camera-manager run-camera run-detector clean require-uv
 
 ##@ Setup
@@ -40,8 +40,11 @@ test: require-uv  ## Run unit tests
 test-integration: require-uv  ## Run tests against real services (nats-server, Qdrant, FFmpeg)
 	uv run pytest -m integration
 
-test-hardware: require-uv  ## Run tests that need an accelerator (Hailo, CUDA)
+test-hardware: require-uv  ## Run tests that need an accelerator (CUDA, TensorRT)
 	uv run pytest -m hardware
+
+test-models: require-uv  ## Run tests on the real models (needs make models)
+	uv run pytest -m models
 
 check: lint type-check test  ## Lint, type-check and unit tests
 
@@ -59,6 +62,13 @@ services-up:  ## Start NATS, Qdrant and go2rtc in Docker
 
 services-down:  ## Stop NATS, Qdrant and go2rtc
 	$(COMPOSE) down
+
+models:  ## Export and download every model into ./models (Docker; torch stays in the container)
+	docker build --tag specter-model-export deploy/models
+	docker run --rm \
+		--volume "$(CURDIR)/models:/models" \
+		--volume "$(CURDIR)/src/specter/inference/model_manifest.yaml:/manifest.yaml:ro" \
+		specter-model-export
 
 migrate: require-uv  ## Apply pending database migrations
 	uv run specter migrate

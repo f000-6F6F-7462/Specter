@@ -66,3 +66,13 @@ def test_fixed_rate_ignores_detection_latency_when_mode_is_fixed() -> None:
     sampler.adapt_to_detection_latency(detection_latency_p95_milliseconds=500.0)
 
     assert sampler.effective_fps == 10.0
+
+
+def test_frame_is_admitted_when_timestamps_start_over_after_reconnecting() -> None:
+    sampler = FrameSampler(SamplingSettings(target_fps=10.0, is_motion_gating_enabled=False))
+
+    before_reconnect = sampler.decide(build_frame(500.0))
+    after_reconnect = sampler.decide(build_frame(0.2))
+
+    assert before_reconnect is SamplingDecision.PROCESS
+    assert after_reconnect is SamplingDecision.PROCESS

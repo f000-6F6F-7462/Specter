@@ -4,7 +4,9 @@ from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 
+import nats
 import pytest
+from nats.aio.msg import Msg
 
 from specter.camera_manager.go2rtc import Go2rtcClient
 from specter.camera_manager.main import supervise_cameras
@@ -55,6 +57,7 @@ def device_settings(
 async def test_camera_process_runs_and_stops_when_its_desired_state_changes(
     device_settings: Settings,
     message_bus: MessageBus,
+    nats_server_url: str,
     go2rtc_client: Go2rtcClient,
     virtual_video_source_url: str,
 ) -> None:
@@ -69,10 +72,12 @@ async def test_camera_process_runs_and_stops_when_its_desired_state_changes(
     apply_migrations(database)
     save_camera(camera, None)
     statuses: asyncio.Queue[CameraStatus] = asyncio.Queue()
-    await message_bus.subscribe_from_latest(
+    # External clients read camera statuses straight from JetStream, and so does this test.
+    status_connection = await nats.connect(nats_server_url)
+    await status_connection.jetstream().subscribe(
         build_camera_subject(camera.owner_id, camera.id, CameraEvent.STATUS_CHANGED),
-        CameraStatusChangedMessage,
-        partial(record_status, statuses=statuses),
+        cb=partial(record_status, statuses=statuses),
+        ordered_consumer=True,
     )
     shutdown_requested = asyncio.Event()
     manager_task = asyncio.create_task(
@@ -98,16 +103,15 @@ async def test_camera_process_runs_and_stops_when_its_desired_state_changes(
     finally:
         shutdown_requested.set()
         await asyncio.wait_for(manager_task, MANAGER_STOP_TIMEOUT_SECONDS)
+        await status_connection.close()
         database.close()
 
     assert camera.id in stream_names_while_running
     assert is_stream_removed
 
 
-async def record_status(
-    message: CameraStatusChangedMessage, *, statuses: asyncio.Queue[CameraStatus]
-) -> None:
-    await statuses.put(message.status)
+async def record_status(raw_message: Msg, *, statuses: asyncio.Queue[CameraStatus]) -> None:
+    await statuses.put(CameraStatusChangedMessage.model_validate_json(raw_message.data).status)
 
 
 async def wait_for_status(

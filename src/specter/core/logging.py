@@ -7,6 +7,9 @@ from enum import StrEnum
 from typing import Any
 
 TEXT_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
+# httpx logs every request's URL at INFO, and go2rtc accepts a camera's source, password included,
+# only in the URL; Docker keeps these logs on disk, so this logger only reports warnings.
+CREDENTIAL_LEAKING_LOGGER_NAME = "httpx"
 
 # Attributes that every LogRecord has; anything else was passed through ``extra=``.
 STANDARD_RECORD_ATTRIBUTES = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
@@ -50,4 +53,5 @@ def configure_logging(level: str, log_format: LogFormat) -> None:
     root_logger = logging.getLogger()
     root_logger.handlers[:] = [handler]
     root_logger.setLevel(level.upper())
+    logging.getLogger(CREDENTIAL_LEAKING_LOGGER_NAME).setLevel(logging.WARNING)
     logging.captureWarnings(True)
