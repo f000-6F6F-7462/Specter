@@ -1,0 +1,44 @@
+{
+  "$defs": {
+    "CameraStatus": {
+      "description": "Live state of a camera process.",
+      "enum": [
+        "starting",
+        "running",
+        "reconnecting",
+        "stopped",
+        "failed"
+      ],
+      "title": "CameraStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A camera process's latest health, which it keeps refreshing in the camera health bucket.",
+  "properties": {
+    "camera_id": {
+      "title": "Camera Id",
+      "type": "string"
+    },
+    "owner_id": {
+      "title": "Owner Id",
+      "type": "string"
+    },
+    "reported_at": {
+      "format": "date-time",
+      "title": "Reported At",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/CameraStatus"
+    }
+  },
+  "required": [
+    "owner_id",
+    "camera_id",
+    "status",
+    "reported_at"
+  ],
+  "title": "CameraHealthReport",
+  "type": "object"
+}

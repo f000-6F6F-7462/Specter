@@ -1,12 +1,20 @@
 """NATS subject names used by Specter.
 
-Events are published under their owner, so a client can subscribe to one owner's events and the
-NATS server can limit each user to their own subjects. NATS exposes subjects to MQTT clients with
-``/`` in place of ``.``: ``specter.owners.alice.cameras.front_door.match_confirmed`` is the MQTT
-topic ``specter/owners/alice/cameras/front_door/match_confirmed``.
+Events are published under their owner, so a consumer can follow a single owner's events, for
+example with the subject ``specter.owners.owner_alice.>``.
 """
 
 from enum import StrEnum
+
+from specter.messaging.messages import (
+    CameraStatusChangedMessage,
+    ConfigurationChangedMessage,
+    EnrollmentJobMessage,
+    EnrollmentStatusChangedMessage,
+    MatchConfirmedMessage,
+    RuleTriggeredMessage,
+    SpecterMessage,
+)
 
 ENROLLMENT_JOBS = "specter.enrollment.jobs"
 SUBJECT_WILDCARD = "*"
@@ -59,6 +67,34 @@ def build_owner_subject(owner_id: str, event: OwnerEvent) -> str:
 def build_all_owners_subject(event: OwnerEvent) -> str:
     """Returns a wildcard subject that matches an owner event of every owner."""
     return f"specter.owners.{SUBJECT_WILDCARD}.{event}"
+
+
+def build_message_subject(message: SpecterMessage) -> str:
+    """Returns the subject that the message is published on, derived from its type and ids.
+
+    Raises:
+        ValueError: An id cannot be used as a subject token, or the message type has no subject.
+    """
+    match message:
+        case MatchConfirmedMessage():
+            return build_camera_subject(
+                message.owner_id, message.camera_id, CameraEvent.MATCH_CONFIRMED
+            )
+        case RuleTriggeredMessage():
+            return build_camera_subject(
+                message.owner_id, message.camera_id, CameraEvent.RULE_TRIGGERED
+            )
+        case CameraStatusChangedMessage():
+            return build_camera_subject(
+                message.owner_id, message.camera_id, CameraEvent.STATUS_CHANGED
+            )
+        case EnrollmentStatusChangedMessage():
+            return build_owner_subject(message.owner_id, OwnerEvent.ENROLLMENT_STATUS_CHANGED)
+        case ConfigurationChangedMessage():
+            return build_owner_subject(message.owner_id, OwnerEvent.CONFIGURATION_CHANGED)
+        case EnrollmentJobMessage():
+            return ENROLLMENT_JOBS
+    raise ValueError(f"{type(message).__name__} has no subject")
 
 
 def _require_subject_token(value: str, description: str) -> None:

@@ -1,4 +1,4 @@
-"""Messages that Specter publishes on NATS, which are also its contract with external clients.
+"""Messages and shared values that Specter writes to NATS, which are its contract with clients.
 
 The major part of ``schema_version`` changes only when a change breaks existing consumers.
 """
@@ -137,3 +137,16 @@ MESSAGE_TYPES: tuple[type[SpecterMessage], ...] = (
     EnrollmentStatusChangedMessage,
     ConfigurationChangedMessage,
 )
+
+
+class CameraHealthReport(_MessagePart):
+    """A camera process's latest health, which it keeps refreshing in the camera health bucket."""
+
+    owner_id: str
+    camera_id: str
+    status: CameraStatus
+    reported_at: AwareDatetime
+
+
+# Every model that clients read from NATS, as a message or as a key-value bucket value.
+CONTRACT_MODEL_TYPES: tuple[type[BaseModel], ...] = (*MESSAGE_TYPES, CameraHealthReport)

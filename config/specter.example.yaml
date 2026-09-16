@@ -21,6 +21,10 @@ services:
 detector:
   max_batch_size: 8
 
+matching:
+  # The same target on the same camera raises at most one alert within this time.
+  cooldown_seconds: 30
+
 evidence:
   # Snapshots older than this are removed, whole days at a time.
   maximum_age_days: 30

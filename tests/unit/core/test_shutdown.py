@@ -5,9 +5,14 @@ from functools import partial
 
 import pytest
 
-from specter.core.shutdown import install_shutdown_signal_handlers, run_until_shutdown_signal
+from specter.core.shutdown import (
+    complete_unless_shutdown,
+    install_shutdown_signal_handlers,
+    run_until_shutdown_signal,
+)
 
 SIGNAL_DELIVERY_TIMEOUT_SECONDS = 1.0
+NEVER_FINISHING_SECONDS = 3600.0
 
 
 async def record_shutdown_event(
@@ -35,3 +40,22 @@ async def test_process_receives_an_unset_shutdown_event_when_started() -> None:
 
     assert len(received_events) == 1
     assert not received_events[0].is_set()
+
+
+async def test_operation_is_completed_when_it_finishes_before_shutdown() -> None:
+    shutdown_requested = asyncio.Event()
+
+    is_completed = await complete_unless_shutdown(asyncio.sleep(0), shutdown_requested)
+
+    assert is_completed
+
+
+async def test_operation_is_cancelled_when_shutdown_is_requested_first() -> None:
+    shutdown_requested = asyncio.Event()
+    operation_task = asyncio.create_task(asyncio.sleep(NEVER_FINISHING_SECONDS))
+    shutdown_requested.set()
+
+    is_completed = await complete_unless_shutdown(operation_task, shutdown_requested)
+
+    assert not is_completed
+    assert operation_task.cancelled()

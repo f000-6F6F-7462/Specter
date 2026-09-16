@@ -20,7 +20,8 @@
         "too_blurry",
         "extreme_pose",
         "too_dark",
-        "too_bright"
+        "too_bright",
+        "processing_failed"
       ],
       "title": "RejectionReason",
       "type": "string"

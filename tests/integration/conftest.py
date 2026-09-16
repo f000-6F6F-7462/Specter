@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import socket
@@ -8,10 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from specter.config.settings import MatchingSettings
 from specter.messaging.client import MessageBus
 
 TEST_NATS_URL_ENVIRONMENT_VARIABLE = "SPECTER_TEST_NATS_URL"
 NATS_SERVER_START_TIMEOUT_SECONDS = 5.0
+NATS_CONNECT_TIMEOUT_SECONDS = 10.0
 NATS_SERVER_INSTALLATION_URL = (
     "https://docs.nats.io/running-a-nats-service/introduction/installation"
 )
@@ -75,7 +78,16 @@ def nats_server_url(tmp_path: Path) -> Iterator[str]:
 
 @pytest.fixture
 async def message_bus(nats_server_url: str) -> AsyncIterator[MessageBus]:
-    connected_message_bus = await MessageBus.connect(nats_server_url, client_name="specter-tests")
+    connected_message_bus = MessageBus(client_name="specter-tests")
+    # Connecting retries forever, so an unreachable server must fail the test instead of hanging it.
+    try:
+        await asyncio.wait_for(
+            connected_message_bus.connect(nats_server_url), NATS_CONNECT_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        await connected_message_bus.close()
+        pytest.fail(f"NATS at {nats_server_url} is not reachable; start it with `make services-up`")
+    await connected_message_bus.declare_streams(MatchingSettings().cooldown_seconds)
     yield connected_message_bus
     await connected_message_bus.close()
 
@@ -83,3 +95,8 @@ async def message_bus(nats_server_url: str) -> AsyncIterator[MessageBus]:
 @pytest.fixture
 def unique_camera_id() -> str:
     return f"test_camera_{time.time_ns()}"
+
+
+@pytest.fixture
+def unique_owner_id() -> str:
+    return f"test_owner_{time.time_ns()}"
