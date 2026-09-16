@@ -71,6 +71,7 @@ async def test_message_is_stored_once_when_published_twice(
         owner_id=unique_owner_id,
         target_id="target_jane",
         reference_image_id="image_1",
+        modality=EmbeddingModality.FACE,
         status=ImageStatus.EMBEDDED,
     )
 
@@ -208,7 +209,6 @@ def build_enrollment_job() -> EnrollmentJobMessage:
         owner_id="owner_tests",
         target_id="target_jane",
         reference_image_id="image_1",
-        image_path="reference_images/image_1.jpg",
         modality=EmbeddingModality.FACE,
     )
 

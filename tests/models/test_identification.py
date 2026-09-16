@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
@@ -36,6 +37,13 @@ PROFILE_IDENTIFICATION_MODELS = [
 
 
 @pytest.fixture
+def model_executor() -> Iterator[ThreadPoolExecutor]:
+    executor = ThreadPoolExecutor(max_workers=1)
+    yield executor
+    executor.shutdown(wait=True)
+
+
+@pytest.fixture
 def shared_group_photo(group_photo: FrameImage) -> Iterator[SharedFrameReference]:
     camera_id = f"camera_identification_{time.time_ns()}"
     frame_height, frame_width = group_photo.shape[:2]
@@ -57,6 +65,7 @@ def build_service(
     model_manifest: ModelManifest,
     load_model_session: Callable[[str], InferenceSession],
     model_ids: tuple[str, str, str],
+    model_executor: ThreadPoolExecutor,
 ) -> IdentificationService:
     face_detection_model_id, face_recognition_model_id, appearance_model_id = model_ids
     face_detection_model = model_manifest.models[face_detection_model_id]
@@ -71,6 +80,7 @@ def build_service(
         appearance_embedder=AppearanceEmbedder(
             appearance_model.input_width, appearance_model.input_height
         ),
+        model_executor=model_executor,
     )
 
 
@@ -80,8 +90,9 @@ def test_people_get_unit_length_embeddings_when_group_photo_is_identified(
     load_model_session: Callable[[str], InferenceSession],
     shared_group_photo: SharedFrameReference,
     model_ids: tuple[str, str, str],
+    model_executor: ThreadPoolExecutor,
 ) -> None:
-    service = build_service(model_manifest, load_model_session, model_ids)
+    service = build_service(model_manifest, load_model_session, model_ids, model_executor)
     request = IdentificationRequest(
         frame=shared_group_photo,
         tasks=tuple(
@@ -122,8 +133,11 @@ def test_face_is_not_embedded_when_it_cannot_beat_the_requested_score(
     model_manifest: ModelManifest,
     load_model_session: Callable[[str], InferenceSession],
     shared_group_photo: SharedFrameReference,
+    model_executor: ThreadPoolExecutor,
 ) -> None:
-    service = build_service(model_manifest, load_model_session, PROFILE_IDENTIFICATION_MODELS[0])
+    service = build_service(
+        model_manifest, load_model_session, PROFILE_IDENTIFICATION_MODELS[0], model_executor
+    )
     request = IdentificationRequest(
         frame=shared_group_photo,
         tasks=(
@@ -150,8 +164,11 @@ def test_reply_is_empty_when_camera_already_replaced_the_frame(
     model_manifest: ModelManifest,
     load_model_session: Callable[[str], InferenceSession],
     shared_group_photo: SharedFrameReference,
+    model_executor: ThreadPoolExecutor,
 ) -> None:
-    service = build_service(model_manifest, load_model_session, PROFILE_IDENTIFICATION_MODELS[0])
+    service = build_service(
+        model_manifest, load_model_session, PROFILE_IDENTIFICATION_MODELS[0], model_executor
+    )
     request = IdentificationRequest(
         frame=shared_group_photo.model_copy(update={"frame_sequence_number": 2}),
         tasks=(

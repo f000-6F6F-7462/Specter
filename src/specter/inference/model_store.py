@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from specter.config.settings import HardwareProfile
 from specter.core.errors import ConfigurationError
+from specter.entities.targets import EmbeddingModality
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,14 @@ class ModelRole(StrEnum):
     FACE_DETECTION = "face_detection"
     FACE_RECOGNITION = "face_recognition"
     APPEARANCE = "appearance"
+
+
+# Roles whose models produce embeddings, keyed by the embedding modality each one produces.
+EMBEDDING_MODEL_ROLES_BY_MODALITY = {
+    EmbeddingModality.FACE: ModelRole.FACE_RECOGNITION,
+    EmbeddingModality.APPEARANCE: ModelRole.APPEARANCE,
+}
+EMBEDDING_MODEL_ROLES = tuple(EMBEDDING_MODEL_ROLES_BY_MODALITY.values())
 
 
 class ModelFormat(StrEnum):
@@ -95,6 +104,8 @@ class ModelSpecification(_ManifestPart):
     input_height: int = Field(gt=0)
     files: tuple[ModelFile, ...] = Field(min_length=1)
     export: ModelExport | None = None
+    # Set for models that produce embeddings, which size the vector index's collections.
+    embedding_size: int | None = Field(default=None, gt=0)
 
 
 class ModelManifest(_ManifestPart):
@@ -113,6 +124,11 @@ class ModelManifest(_ManifestPart):
             for model_id in model_ids_by_role.values():
                 if model_id not in self.models:
                     raise ValueError(f"a profile uses model {model_id}, which is not defined")
+            for role in EMBEDDING_MODEL_ROLES:
+                if self.models[model_ids_by_role[role]].embedding_size is None:
+                    raise ValueError(
+                        f"{role} model {model_ids_by_role[role]} needs an embedding size"
+                    )
         for model_id, model in self.models.items():
             if (
                 isinstance(model.export, PnnxExport)
@@ -126,6 +142,17 @@ class ModelManifest(_ManifestPart):
                     f"model {model_id} has a file that is neither downloaded nor exported"
                 )
         return self
+
+    def embedding_version(self, model_id: str) -> str:
+        """Returns the version that embeddings of the model are stored under.
+
+        A model converted to another format computes the same embeddings, so it keeps the version of
+        the model it was converted from, and a device that switches formats keeps its enrollments.
+        """
+        export = self.models[model_id].export
+        if isinstance(export, PnnxExport):
+            return self.embedding_version(export.source_model)
+        return model_id
 
 
 def load_model_manifest(manifest_file: Path = MANIFEST_FILE) -> ModelManifest:

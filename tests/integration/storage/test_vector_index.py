@@ -87,7 +87,9 @@ async def test_synchronization_removes_stale_points_and_fixes_flags_when_drifted
         build_embedding(owner_id, "bob", axis_vector(0), is_enabled=False)
     )
 
-    report = await vector_index.synchronize({f"{owner_id}_bob_image": True})
+    report = await vector_index.synchronize(
+        {(f"{owner_id}_bob_image", EmbeddingModality.FACE): True}
+    )
 
     assert report.removed_point_count >= 1
     assert report.updated_point_count >= 1
@@ -104,3 +106,21 @@ async def test_camera_without_watchlists_matches_nothing_when_searching(
     )
 
     assert candidates == []
+
+
+async def test_collection_is_replaced_when_its_vector_size_changes(
+    vector_index: VectorIndex,
+) -> None:
+    replaced_modalities = await vector_index.ensure_collections(
+        {EmbeddingModality.APPEARANCE: EMBEDDING_SIZE // 2}
+    )
+    restored_modalities = await vector_index.ensure_collections(
+        {EmbeddingModality.APPEARANCE: EMBEDDING_SIZE}
+    )
+    unchanged_modalities = await vector_index.ensure_collections(
+        {EmbeddingModality.APPEARANCE: EMBEDDING_SIZE}
+    )
+
+    assert replaced_modalities == [EmbeddingModality.APPEARANCE]
+    assert restored_modalities == [EmbeddingModality.APPEARANCE]
+    assert unchanged_modalities == []

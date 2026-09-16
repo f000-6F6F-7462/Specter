@@ -33,6 +33,8 @@ def build_manifest(model_file: ModelFile, *, is_exported: bool = False) -> Model
         input_height=320,
         files=(model_file,),
         export=UltralyticsExport(kind="ultralytics", weights="yolo26n.pt") if is_exported else None,
+        # One model plays every role here, including those that produce embeddings.
+        embedding_size=512,
     )
     return ModelManifest(
         models={"test_model": model},
@@ -121,3 +123,10 @@ def test_manifest_is_rejected_when_a_profile_names_an_undefined_model() -> None:
                 profile: dict.fromkeys(ModelRole, "other_model") for profile in HardwareProfile
             },
         )
+
+
+def test_converted_model_keeps_the_embedding_version_of_its_source_model() -> None:
+    manifest = load_model_manifest()
+
+    assert manifest.embedding_version("arcface_mobilefacenet_ncnn") == "arcface_mobilefacenet_onnx"
+    assert manifest.embedding_version("arcface_r50_onnx") == "arcface_r50_onnx"

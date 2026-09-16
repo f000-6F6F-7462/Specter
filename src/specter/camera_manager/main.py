@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from specter.camera_manager.alert_recorder import AlertRecorder
+from specter.camera_manager.evidence_retention import EvidenceRetention
 from specter.camera_manager.go2rtc import Go2rtcClient
 from specter.camera_manager.supervisor import CameraManager
 from specter.config.settings import Settings
@@ -12,6 +13,7 @@ from specter.messaging.client import MessageBus
 from specter.messaging.shared_state import CameraHealthBucket
 from specter.storage.credentials import CredentialCipher, load_or_create_credentials_key
 from specter.storage.database import DatabaseThread, open_database
+from specter.storage.evidence import EvidenceStore
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
 async def supervise_cameras(
     settings: Settings, message_bus: MessageBus, shutdown_requested: asyncio.Event
 ) -> None:
-    """Runs every camera that should run and records their alerts, until shutdown is requested."""
+    """Runs the cameras that should run, records their alerts and keeps evidence within limits."""
     cipher = CredentialCipher(
         load_or_create_credentials_key(settings.security.credentials_key_file)
     )
@@ -52,6 +54,9 @@ async def supervise_cameras(
         await asyncio.gather(
             camera_manager.run(shutdown_requested),
             AlertRecorder(message_bus, database_thread).run(shutdown_requested),
+            EvidenceRetention(
+                settings.evidence, EvidenceStore(settings.paths.data_directory), database_thread
+            ).run(shutdown_requested),
         )
     finally:
         await go2rtc_client.close()

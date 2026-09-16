@@ -1,5 +1,6 @@
 import asyncio
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -70,7 +71,7 @@ def build_detection_batcher() -> DetectionBatcher:
     )
 
 
-def build_identification_service() -> IdentificationService:
+def build_identification_service(model_executor: ThreadPoolExecutor) -> IdentificationService:
     manifest = load_model_manifest()
     face_model = manifest.models["scrfd_10g_onnx"]
     appearance_model = manifest.models["osnet_x0_25_onnx"]
@@ -82,6 +83,7 @@ def build_identification_service() -> IdentificationService:
         appearance_embedder=AppearanceEmbedder(
             appearance_model.input_width, appearance_model.input_height
         ),
+        model_executor=model_executor,
     )
 
 
@@ -152,7 +154,8 @@ async def test_enrolled_person_is_confirmed_once_when_camera_keeps_seeing_her(
     target_id = f"target_{unique_suffix}"
     group_photo = read_group_photo()
     detection_batcher = build_detection_batcher()
-    identification_service = build_identification_service()
+    model_executor = ThreadPoolExecutor(max_workers=1)
+    identification_service = build_identification_service(model_executor)
     batching_task = asyncio.create_task(detection_batcher.run())
     detector_client = DetectorClient(camera.id, message_bus)
     confirmed_matches: list[ConfirmedMatch] = []
@@ -198,6 +201,7 @@ async def test_enrolled_person_is_confirmed_once_when_camera_keeps_seeing_her(
         await asyncio.gather(batching_task, return_exceptions=True)
         detection_batcher.close()
         identification_service.close()
+        model_executor.shutdown(wait=True)
 
     assert len(confirmed_matches) == 1
     match = confirmed_matches[0]

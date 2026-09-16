@@ -41,6 +41,7 @@ models:
     format: onnx
     input_width: 112
     input_height: 112
+    embedding_size: 512
     files:
       - path: insightface/w600k_r50.onnx
         sha256: 4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43
@@ -63,6 +64,7 @@ models:
     format: onnx
     input_width: 112
     input_height: 112
+    embedding_size: 512
     files:
       - path: insightface/w600k_mbf.onnx
         sha256: 9cc6e4a75f0e2bf0b1aed94578f144d15175f357bdc05e815e5c4a02b319eb4f
@@ -85,6 +87,7 @@ models:
     format: ncnn
     input_width: 112
     input_height: 112
+    embedding_size: 512
     files:
       - path: arcface_mobilefacenet.ncnn.param
       - path: arcface_mobilefacenet.ncnn.bin
@@ -96,6 +99,7 @@ models:
     format: onnx
     input_width: 128
     input_height: 256
+    embedding_size: 512
     files:
       - path: osnet_x0_25.onnx
     export:
@@ -108,6 +112,7 @@ models:
     format: ncnn
     input_width: 128
     input_height: 256
+    embedding_size: 512
     files:
       - path: osnet_x0_25.ncnn.param
       - path: osnet_x0_25.ncnn.bin
