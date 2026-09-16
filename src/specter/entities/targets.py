@@ -51,6 +51,8 @@ class RejectionReason(StrEnum):
     EXTREME_POSE = "extreme_pose"
     TOO_DARK = "too_dark"
     TOO_BRIGHT = "too_bright"
+    # Enrollment kept failing for a reason unrelated to the image, such as a detector error.
+    PROCESSING_FAILED = "processing_failed"
 
 
 @dataclass(frozen=True, slots=True)

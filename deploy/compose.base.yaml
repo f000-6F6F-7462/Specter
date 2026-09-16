@@ -1,5 +1,4 @@
-# Services that run next to Specter on the device.
-# Only MQTT is reachable from the LAN; everything else listens on localhost.
+# Services that run next to Specter on the device. Each one listens on localhost only.
 
 name: specter
 
@@ -10,7 +9,6 @@ services:
     ports:
       - "127.0.0.1:4222:4222"
       - "127.0.0.1:8222:8222"
-      - "1883:1883"
     volumes:
       - ./nats/nats-server.conf:/etc/nats/nats-server.conf:ro
       - nats-data:/data

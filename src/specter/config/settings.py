@@ -107,6 +107,13 @@ class DetectorSettings(_StrictModel):
     max_batch_delay_milliseconds: float = Field(gt=0)
 
 
+class MatchingSettings(_StrictModel):
+    """How confirmed matches turn into alerts."""
+
+    # The same target on the same camera raises at most one alert within this time.
+    cooldown_seconds: float = Field(default=30.0, gt=0)
+
+
 class EvidenceSettings(_StrictModel):
     """How long evidence snapshots are kept and how much disk they may use."""
 
@@ -151,6 +158,7 @@ class Settings(BaseSettings):
     paths: PathSettings = Field(default_factory=PathSettings)
     services: ServiceSettings = Field(default_factory=ServiceSettings)
     detector: DetectorSettings
+    matching: MatchingSettings = Field(default_factory=MatchingSettings)
     evidence: EvidenceSettings = Field(default_factory=EvidenceSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
