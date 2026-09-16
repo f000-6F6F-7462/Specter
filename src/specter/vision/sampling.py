@@ -45,6 +45,7 @@ class FrameSampler:
         self._rate_increase_fps = rate_increase_fps
         self._effective_fps = settings.target_fps
         self._next_admitted_presentation_time_seconds: float | None = None
+        self._last_admitted_presentation_time_seconds: float | None = None
         self._previous_motion_thumbnail: NDArray[np.float64] | None = None
 
     @property
@@ -54,6 +55,13 @@ class FrameSampler:
 
     def decide(self, frame: Frame) -> SamplingDecision:
         """Returns whether to process the frame, remembering it when it is admitted."""
+        if (
+            self._last_admitted_presentation_time_seconds is not None
+            and frame.presentation_time_seconds < self._last_admitted_presentation_time_seconds
+        ):
+            # Timestamps start over when a stream is opened again; keeping the old schedule would
+            # hold back every frame until the new timeline caught up with the old one.
+            self._next_admitted_presentation_time_seconds = None
         if (
             self._next_admitted_presentation_time_seconds is not None
             and frame.presentation_time_seconds < self._next_admitted_presentation_time_seconds
@@ -75,6 +83,7 @@ class FrameSampler:
         self._next_admitted_presentation_time_seconds = (
             frame.presentation_time_seconds + 1.0 / self._effective_fps
         )
+        self._last_admitted_presentation_time_seconds = frame.presentation_time_seconds
         return SamplingDecision.PROCESS
 
     def adapt_to_detection_latency(self, detection_latency_p95_milliseconds: float) -> None:

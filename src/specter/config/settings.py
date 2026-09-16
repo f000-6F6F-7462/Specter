@@ -19,14 +19,14 @@ class HardwareProfile(StrEnum):
     PC_CPU = "pc-cpu"
     PC_NVIDIA = "pc-nvidia"
     JETSON = "jetson"
-    RASPBERRY_PI_HAILO = "raspberry-pi-hailo"
+    RASPBERRY_PI = "raspberry-pi"
 
 
 class DetectorBackend(StrEnum):
     """Runtime that executes the models."""
 
     ONNXRUNTIME = "onnxruntime"
-    HAILO = "hailo"
+    NCNN = "ncnn"
 
 
 DEFAULT_HARDWARE_PROFILE = HardwareProfile.PC_CPU
@@ -57,10 +57,11 @@ DETECTOR_PRESETS_BY_HARDWARE_PROFILE: dict[HardwareProfile, dict[str, Any]] = {
         "max_batch_size": 8,
         "max_batch_delay_milliseconds": 5.0,
     },
-    HardwareProfile.RASPBERRY_PI_HAILO: {
-        "backend": DetectorBackend.HAILO,
+    # NCNN runs one image at a time, and a Pi CPU gains nothing from batching.
+    HardwareProfile.RASPBERRY_PI: {
+        "backend": DetectorBackend.NCNN,
         "onnxruntime_execution_providers": ["CPUExecutionProvider"],
-        "max_batch_size": 8,
+        "max_batch_size": 1,
         "max_batch_delay_milliseconds": 5.0,
     },
 }

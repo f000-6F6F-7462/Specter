@@ -4,8 +4,8 @@
 
 device:
   name: lobby-edge-01
-  # pc-cpu | pc-nvidia | jetson | raspberry-pi-hailo
-  hardware_profile: raspberry-pi-hailo
+  # pc-cpu | pc-nvidia | jetson | raspberry-pi
+  hardware_profile: raspberry-pi
 
 paths:
   # SQLite database and evidence files.
@@ -20,7 +20,7 @@ services:
 
 # Every detector field has a default from the hardware profile; set one only to override it.
 detector:
-  max_batch_size: 8
+  max_batch_size: 1
 
 matching:
   # The same target on the same camera raises at most one alert within this time.

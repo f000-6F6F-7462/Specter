@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import threading
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -34,18 +33,29 @@ class _DecodedFrame:
 class StreamReader:
     """Decodes a video stream on a background thread and hands over only its newest frame.
 
-    Analysis runs slower than the camera, so a frame that arrives while analysis is busy replaces
-    the waiting one instead of queuing behind it. A stream that fails or cannot be opened is
-    opened again with growing delays until the reader is stopped. Must be created inside the
-    running event loop.
+    Frames are scaled down to fit the given size, usually the model's input, while they are
+    converted. Analysis runs slower than the camera, so a frame that arrives while analysis is
+    busy replaces the waiting one instead of queuing behind it. A stream that fails or cannot be
+    opened is opened again with growing delays until the reader is stopped. Must be created
+    inside the running event loop.
     """
 
-    def __init__(self, camera_id: str, stream_url: str) -> None:
+    def __init__(
+        self,
+        camera_id: str,
+        stream_url: str,
+        *,
+        maximum_width_pixels: int,
+        maximum_height_pixels: int,
+    ) -> None:
         self._camera_id = camera_id
         self._stream_url = stream_url
+        self._maximum_width_pixels = maximum_width_pixels
+        self._maximum_height_pixels = maximum_height_pixels
         self._status = CameraStatus.STARTING
         self._decoded_frame_count = 0
         self._returned_sequence_number = 0
+        self._last_presentation_time_seconds = 0.0
         self._latest_decoded_frame: _DecodedFrame | None = None
         self._latest_frame_lock = threading.Lock()
         self._stop_requested = threading.Event()
@@ -86,10 +96,20 @@ class StreamReader:
             image=image,
         )
 
-    @staticmethod
-    def _convert_to_image(video_frame: av.VideoFrame) -> FrameImage:
-        # Converting to BGR always yields 8-bit pixels, so no copy is made here.
-        return np.asarray(video_frame.to_ndarray(format=DECODED_PIXEL_FORMAT), dtype=np.uint8)
+    def _convert_to_image(self, video_frame: av.VideoFrame) -> FrameImage:
+        scale = min(
+            self._maximum_width_pixels / video_frame.width,
+            self._maximum_height_pixels / video_frame.height,
+            1.0,
+        )
+        # Scaling while converting from the decoder's format never builds a full-size BGR image.
+        scaled_frame = video_frame.reformat(
+            width=max(round(video_frame.width * scale), 1),
+            height=max(round(video_frame.height * scale), 1),
+            format=DECODED_PIXEL_FORMAT,
+        )
+        # BGR always has 8-bit pixels, so no copy is made here.
+        return np.asarray(scaled_frame.to_ndarray(), dtype=np.uint8)
 
     def _take_newer_frame(self) -> _DecodedFrame | None:
         with self._latest_frame_lock:
@@ -133,13 +153,14 @@ class StreamReader:
 
     def _hand_over(self, video_frame: av.VideoFrame) -> None:
         self._decoded_frame_count += 1
+        # A frame without a timestamp, such as the first frame of a restream, keeps the previous
+        # frame's, so every timestamp stays on the stream's own timeline.
+        if video_frame.time is not None:
+            self._last_presentation_time_seconds = float(video_frame.time)
         decoded_frame = _DecodedFrame(
             video_frame=video_frame,
             sequence_number=self._decoded_frame_count,
-            # A frame without a timestamp still needs one that grows, for the frame rate decisions.
-            presentation_time_seconds=(
-                float(video_frame.time) if video_frame.time is not None else time.monotonic()
-            ),
+            presentation_time_seconds=self._last_presentation_time_seconds,
             captured_at=datetime.now(UTC),
         )
         with self._latest_frame_lock:
