@@ -167,7 +167,7 @@ class IdentificationService:
             ).has_passed,
         )
 
-    def _embed_faces(self, aligned_faces: list[FrameImage]) -> list[Embedding]:
+    def _embed_faces(self, aligned_faces: list[FrameImage]) -> list[Embedding | None]:
         if not aligned_faces:
             return []
         all_outputs = self._models.face_recognition_session.run(
@@ -175,7 +175,7 @@ class IdentificationService:
         )
         return [FaceEmbedder.read_embedding(outputs) for outputs in all_outputs]
 
-    def _embed_appearances(self, crops: list[FrameImage]) -> list[Embedding]:
+    def _embed_appearances(self, crops: list[FrameImage]) -> list[Embedding | None]:
         if not crops:
             return []
         all_outputs = self._models.appearance_session.run(

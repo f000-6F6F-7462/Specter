@@ -157,7 +157,7 @@ async def analyze_frames(
 ) -> None:
     """Detects objects in each admitted frame and analyzes them, adapting the frame rate."""
     while True:
-        frame = await stream_reader.next_frame()
+        frame = await stream_reader.next_frame(frame_sampler.is_due)
         if frame_sampler.decide(frame) is not SamplingDecision.PROCESS:
             continue
         detections = await detector_client.detect(frame)

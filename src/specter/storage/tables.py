@@ -26,7 +26,6 @@ class CameraRecord(Model):
     source_url = TextField()
     credentials_username = CharField(null=True)
     credentials_encrypted_password = TextField(null=True)
-    transport = CharField()
     detection_classes_json = TextField()
     sampling_mode = CharField()
     target_fps = FloatField()

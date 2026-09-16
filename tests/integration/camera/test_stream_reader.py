@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections.abc import AsyncIterator
+from functools import partial
 
 import pytest
 
@@ -16,6 +17,11 @@ STATUS_POLL_INTERVAL_SECONDS = 0.1
 MAXIMUM_FRAME_SIZE_PIXELS = 640
 # The virtual 1280x720 stream, scaled down to fit a 640-pixel square.
 SCALED_VIDEO_SHAPE = (360, 640, 3)
+SPACED_FRAMES_INTERVAL_SECONDS = 0.5
+
+
+def accept_every_frame(_presentation_time_seconds: float) -> bool:
+    return True
 
 
 @pytest.fixture
@@ -39,8 +45,12 @@ async def test_newer_frames_are_decoded_when_stream_is_available(
     )
     stream_reader.start()
     try:
-        first_frame = await asyncio.wait_for(stream_reader.next_frame(), FRAME_TIMEOUT_SECONDS)
-        second_frame = await asyncio.wait_for(stream_reader.next_frame(), FRAME_TIMEOUT_SECONDS)
+        first_frame = await asyncio.wait_for(
+            stream_reader.next_frame(accept_every_frame), FRAME_TIMEOUT_SECONDS
+        )
+        second_frame = await asyncio.wait_for(
+            stream_reader.next_frame(accept_every_frame), FRAME_TIMEOUT_SECONDS
+        )
         status_while_reading = stream_reader.status
     finally:
         await stream_reader.stop()
@@ -48,6 +58,35 @@ async def test_newer_frames_are_decoded_when_stream_is_available(
     assert first_frame.image.shape == SCALED_VIDEO_SHAPE
     assert second_frame.sequence_number > first_frame.sequence_number
     assert status_while_reading is CameraStatus.RUNNING
+
+
+async def test_frames_that_are_not_due_are_skipped_before_they_are_returned(
+    go2rtc_rtsp_url: str, virtual_stream_name: str
+) -> None:
+    stream_reader = StreamReader(
+        "camera_test",
+        f"{go2rtc_rtsp_url}/{virtual_stream_name}",
+        maximum_width_pixels=MAXIMUM_FRAME_SIZE_PIXELS,
+        maximum_height_pixels=MAXIMUM_FRAME_SIZE_PIXELS,
+    )
+    stream_reader.start()
+    try:
+        first_frame = await asyncio.wait_for(
+            stream_reader.next_frame(accept_every_frame), FRAME_TIMEOUT_SECONDS
+        )
+        due_after_seconds = first_frame.presentation_time_seconds + SPACED_FRAMES_INTERVAL_SECONDS
+        second_frame = await asyncio.wait_for(
+            stream_reader.next_frame(partial(is_at_or_after, due_after_seconds)),
+            FRAME_TIMEOUT_SECONDS,
+        )
+    finally:
+        await stream_reader.stop()
+
+    assert second_frame.presentation_time_seconds >= due_after_seconds
+
+
+def is_at_or_after(due_after_seconds: float, presentation_time_seconds: float) -> bool:
+    return presentation_time_seconds >= due_after_seconds
 
 
 async def test_status_is_reconnecting_when_stream_does_not_exist(go2rtc_rtsp_url: str) -> None:

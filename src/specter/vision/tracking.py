@@ -26,6 +26,8 @@ class TrackingUpdate:
 
     tracks: tuple[Track, ...]
     ended_track_ids: frozenset[int]
+    # The stream's timestamps started over, as after a reconnect, which ended every track at once.
+    is_timeline_restarted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,10 +65,11 @@ class ObjectTracker:
     ) -> TrackingUpdate:
         """Tracks the detections of the next frame."""
         ended_track_ids: set[int] = set()
-        if (
+        is_timeline_restarted = (
             self._last_presentation_time_seconds is not None
             and presentation_time_seconds < self._last_presentation_time_seconds
-        ):
+        )
+        if is_timeline_restarted:
             ended_track_ids.update(self._histories_by_track_id)
             self._histories_by_track_id.clear()
             self._tracker = self._create_tracker()
@@ -102,7 +105,11 @@ class ObjectTracker:
             ):
                 ended_track_ids.add(track_id)
                 del self._histories_by_track_id[track_id]
-        return TrackingUpdate(tracks=tuple(tracks), ended_track_ids=frozenset(ended_track_ids))
+        return TrackingUpdate(
+            tracks=tuple(tracks),
+            ended_track_ids=frozenset(ended_track_ids),
+            is_timeline_restarted=is_timeline_restarted,
+        )
 
     def _record_sighting(
         self,

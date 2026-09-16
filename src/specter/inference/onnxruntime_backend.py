@@ -1,10 +1,16 @@
 """Runs ONNX models with ONNX Runtime, on a GPU when one is available and on the CPU otherwise."""
 
 import logging
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
-import onnxruntime
+# ONNX Runtime starts a telemetry uploader to Microsoft when it is imported, unless this is set
+# first. A security device must not send data out, and the uploader's thread can also crash the
+# process as it exits; disabling telemetry after the import leaves the uploader running.
+os.environ["ORT_DISABLE_TELEMETRY"] = "1"
+
+import onnxruntime  # isort: skip
 
 from specter.core.errors import ConfigurationError
 from specter.inference.backends import Tensor

@@ -48,6 +48,7 @@ class DetectorClient:
         self._message_bus = message_bus
         self._frame_writer: SharedFrameWriter | None = None
         self._latencies_milliseconds: deque[float] = deque(maxlen=LATENCY_WINDOW_SIZE)
+        self._is_detector_answering = True
 
     @property
     def latency_percentile_milliseconds(self) -> float | None:
@@ -69,10 +70,9 @@ class DetectorClient:
                 DETECTION_TIMEOUT_SECONDS,
             )
         except NatsError as error:
-            logger.warning(
-                "detector did not answer: %s", error, extra={"camera_id": self._camera_id}
-            )
+            self._record_detector_silence(error)
             return None
+        self._record_detector_answer()
         reply = DetectionReply.model_validate_json(raw_reply)
         self._latencies_milliseconds.append(
             (time.monotonic() - started_at) * MILLISECONDS_PER_SECOND
@@ -111,10 +111,9 @@ class DetectorClient:
                 IDENTIFICATION_TIMEOUT_SECONDS,
             )
         except NatsError as error:
-            logger.warning(
-                "detector did not identify: %s", error, extra={"camera_id": self._camera_id}
-            )
+            self._record_detector_silence(error)
             return None
+        self._record_detector_answer()
         return list(IdentificationReply.model_validate_json(raw_reply).results)
 
     def close(self) -> None:
@@ -122,6 +121,20 @@ class DetectorClient:
         if self._frame_writer is not None:
             self._frame_writer.close()
             self._frame_writer = None
+
+    def _record_detector_silence(self, error: NatsError) -> None:
+        # Frames keep arriving while the detector is down, so only the change is logged, rather
+        # than a warning for every frame filling the device's disk.
+        if self._is_detector_answering:
+            logger.warning(
+                "detector stopped answering: %s", error, extra={"camera_id": self._camera_id}
+            )
+        self._is_detector_answering = False
+
+    def _record_detector_answer(self) -> None:
+        if not self._is_detector_answering:
+            logger.info("detector answers again", extra={"camera_id": self._camera_id})
+        self._is_detector_answering = True
 
     def _build_frame_reference(
         self, frame: Frame, frame_writer: SharedFrameWriter

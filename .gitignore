@@ -29,6 +29,8 @@ htmlcov/
 
 # Runtime artifacts (not source)
 /data/
+# Development data and secrets from config/specter.dev.yaml
+/.dev/
 /models/
 *.pt
 *.onnx

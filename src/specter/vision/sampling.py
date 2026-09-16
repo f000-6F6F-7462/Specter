@@ -53,19 +53,26 @@ class FrameSampler:
         """The rate frames are currently admitted at."""
         return self._effective_fps
 
-    def decide(self, frame: Frame) -> SamplingDecision:
-        """Returns whether to process the frame, remembering it when it is admitted."""
+    def is_due(self, presentation_time_seconds: float) -> bool:
+        """Whether a frame with this timestamp is due under the current rate.
+
+        Needs only the timestamp, so a frame can be skipped before it is converted to an image.
+        """
         if (
             self._last_admitted_presentation_time_seconds is not None
-            and frame.presentation_time_seconds < self._last_admitted_presentation_time_seconds
+            and presentation_time_seconds < self._last_admitted_presentation_time_seconds
         ):
             # Timestamps start over when a stream is opened again; keeping the old schedule would
             # hold back every frame until the new timeline caught up with the old one.
             self._next_admitted_presentation_time_seconds = None
-        if (
-            self._next_admitted_presentation_time_seconds is not None
-            and frame.presentation_time_seconds < self._next_admitted_presentation_time_seconds
-        ):
+        return (
+            self._next_admitted_presentation_time_seconds is None
+            or presentation_time_seconds >= self._next_admitted_presentation_time_seconds
+        )
+
+    def decide(self, frame: Frame) -> SamplingDecision:
+        """Returns whether to process the frame, remembering it when it is admitted."""
+        if not self.is_due(frame.presentation_time_seconds):
             return SamplingDecision.SKIP_ABOVE_RATE
 
         if self._settings.is_motion_gating_enabled:

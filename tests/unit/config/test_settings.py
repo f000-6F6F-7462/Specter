@@ -106,3 +106,12 @@ def test_loading_fails_when_hardware_profile_is_unknown(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError):
         load_settings(config_file)
+
+
+@pytest.mark.parametrize("config_file_name", ["specter.example.yaml", "specter.dev.yaml"])
+def test_shipped_settings_files_are_valid(config_file_name: str) -> None:
+    config_file = Path(__file__).resolve().parents[3] / "config" / config_file_name
+
+    settings = load_settings(config_file)
+
+    assert settings.device.name

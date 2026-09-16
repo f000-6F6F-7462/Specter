@@ -1,0 +1,27 @@
+# Settings for running every process on a development machine, from the repository root, against
+# the services that `make services-up` starts. The `make run-*` targets use this file.
+
+device:
+  name: development
+  hardware_profile: pc-cpu
+
+paths:
+  # Relative to the repository root, and ignored by git.
+  data_directory: .dev/data
+  # Filled by `make models`.
+  models_directory: models
+
+services:
+  nats_url: nats://127.0.0.1:4222
+  qdrant_url: http://127.0.0.1:6333
+  go2rtc_url: http://127.0.0.1:1984
+  go2rtc_rtsp_url: rtsp://127.0.0.1:8554
+
+security:
+  credentials_key_file: .dev/secrets/credentials.key
+  # Send it as a bearer token: curl -H "Authorization: Bearer $(cat .dev/secrets/api.token)"
+  api_token_file: .dev/secrets/api.token
+
+logging:
+  level: INFO
+  format: text
