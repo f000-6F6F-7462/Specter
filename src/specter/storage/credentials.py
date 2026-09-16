@@ -1,14 +1,15 @@
-"""Encryption of camera stream passwords, and the key file that holds the encryption key."""
+"""Encryption of camera stream passwords, and the secret files that keys and tokens live in."""
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
 from specter.core.errors import ConfigurationError
 
-KEY_FILE_PERMISSIONS = 0o600
-KEY_DIRECTORY_PERMISSIONS = 0o700
+SECRET_FILE_PERMISSIONS = 0o600
+SECRET_DIRECTORY_PERMISSIONS = 0o700
 
 
 class CredentialCipher:
@@ -44,47 +45,54 @@ class CredentialCipher:
 
 
 def load_or_create_credentials_key(key_file: Path) -> str:
-    """Returns the key stored in the file, creating the file with a new key on first use.
-
-    The file and its directory are readable only by their owner.
+    """Returns the camera password encryption key, creating its file on first use.
 
     Raises:
         ConfigurationError: The key file cannot be created or read.
     """
-    if not key_file.exists():
-        _create_key_file(key_file)
+    return load_or_create_secret(key_file, CredentialCipher.generate_key)
+
+
+def load_or_create_secret(secret_file: Path, generate_secret: Callable[[], str]) -> str:
+    """Returns the secret stored in the file, creating the file with a new secret on first use.
+
+    The file and its directory are readable only by their owner.
+
+    Raises:
+        ConfigurationError: The secret file cannot be created or read.
+    """
+    if not secret_file.exists():
+        _create_secret_file(secret_file, generate_secret)
     try:
-        return key_file.read_text(encoding="utf-8").strip()
+        return secret_file.read_text(encoding="utf-8").strip()
     except OSError as error:
-        raise ConfigurationError(
-            f"cannot read the credentials key file {key_file}: {error}"
-        ) from error
+        raise ConfigurationError(f"cannot read the secret file {secret_file}: {error}") from error
 
 
-def _create_key_file(key_file: Path) -> None:
-    # Several processes can start at once. Each writes its key to a private temporary file and then
-    # links it into place; linking fails when another process got there first, so every process
-    # reads the same complete key and never a half-written one.
-    partial_file = key_file.with_name(f".{key_file.name}.{os.getpid()}.partial")
+def _create_secret_file(secret_file: Path, generate_secret: Callable[[], str]) -> None:
+    # Several processes can start at once. Each writes its secret to a private temporary file and
+    # then links it into place; linking fails when another process got there first, so every
+    # process reads the same complete secret and never a half-written one.
+    partial_file = secret_file.with_name(f".{secret_file.name}.{os.getpid()}.partial")
     try:
-        key_file.parent.mkdir(mode=KEY_DIRECTORY_PERMISSIONS, parents=True, exist_ok=True)
+        secret_file.parent.mkdir(mode=SECRET_DIRECTORY_PERMISSIONS, parents=True, exist_ok=True)
         file_descriptor = os.open(
-            partial_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, KEY_FILE_PERMISSIONS
+            partial_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECRET_FILE_PERMISSIONS
         )
         with os.fdopen(file_descriptor, "w", encoding="utf-8") as partial_stream:
-            partial_stream.write(CredentialCipher.generate_key())
-            # Without forcing the data and the link to disk, a power loss can leave an empty key
-            # file, and every camera password encrypted with the lost key becomes unrecoverable.
+            partial_stream.write(generate_secret())
+            # Without forcing the data and the link to disk, a power loss can leave an empty file,
+            # and every camera password encrypted with a lost key becomes unrecoverable.
             partial_stream.flush()
             os.fsync(partial_stream.fileno())
-        os.link(partial_file, key_file)
-        _synchronize_directory(key_file.parent)
+        os.link(partial_file, secret_file)
+        _synchronize_directory(secret_file.parent)
     except FileExistsError:
         pass
     except OSError as error:
         raise ConfigurationError(
-            f"cannot create the credentials key file {key_file}: {error}; "
-            "set SPECTER_SECURITY__CREDENTIALS_KEY_FILE to a writable location"
+            f"cannot create the secret file {secret_file}: {error}; "
+            "point the security settings at a writable location"
         ) from error
     finally:
         partial_file.unlink(missing_ok=True)

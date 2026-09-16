@@ -29,9 +29,9 @@ def test_credentials_are_encoded_into_source_url_when_they_contain_special_chara
     )
 
 
-def test_credentials_in_source_url_are_replaced_when_camera_has_its_own() -> None:
+def test_user_in_source_url_is_replaced_when_camera_has_its_own_credentials() -> None:
     camera = build_camera(
-        "rtsp://old:secret@192.168.1.20/stream1",
+        "rtsp://old@192.168.1.20/stream1",
         CameraCredentials(username="admin", password="new"),
     )
 

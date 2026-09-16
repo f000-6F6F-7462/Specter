@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from specter.core.logging import LogFormat
 
 DATABASE_FILE_NAME = "specter.sqlite3"
+BYTES_PER_MEBIBYTE = 1024**2
 BYTES_PER_GIBIBYTE = 1024**3
 
 
@@ -134,6 +135,8 @@ class SecuritySettings(_StrictModel):
 
     # Outside the data directory, so a copied database or backup never contains the key.
     credentials_key_file: Path = Path("/etc/specter/credentials.key")
+    # The token that clients of the HTTP API send as a bearer token.
+    api_token_file: Path = Path("/etc/specter/api.token")
 
 
 class ApiSettings(_StrictModel):
@@ -141,6 +144,13 @@ class ApiSettings(_StrictModel):
 
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
+    # Reference photos from phones are a few megabytes; larger uploads are refused.
+    maximum_image_size_mebibytes: float = Field(default=10.0, gt=0)
+
+    @property
+    def maximum_image_size_bytes(self) -> int:
+        """The largest reference image the API accepts, in bytes."""
+        return int(self.maximum_image_size_mebibytes * BYTES_PER_MEBIBYTE)
 
 
 class LoggingSettings(_StrictModel):

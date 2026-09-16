@@ -65,3 +65,13 @@ def test_password_is_hidden_when_credentials_are_printed() -> None:
     credentials = CameraCredentials(username="admin", password="very-secret")
 
     assert "very-secret" not in repr(credentials)
+
+
+def test_camera_is_rejected_when_its_source_url_contains_a_password() -> None:
+    with pytest.raises(InvalidEntityError, match="must not contain a password"):
+        Camera(
+            id="camera_1",
+            owner_id="owner_alice",
+            name="Front door",
+            source_url="rtsp://admin:secret@192.168.1.20/stream",
+        )

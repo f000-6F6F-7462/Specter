@@ -80,6 +80,17 @@ def save_target(target: Target) -> None:
         ) from error
 
 
+def save_targets(targets: Iterable[Target]) -> None:
+    """Saves several targets in one transaction, so either all of them are stored or none.
+
+    Raises:
+        InvalidEntityError: A target's watchlist does not exist.
+    """
+    with database_proxy.atomic():
+        for target in targets:
+            save_target(target)
+
+
 def find_target(target_id: str) -> Target | None:
     """Returns the target, or None if it does not exist."""
     record = TargetRecord.get_or_none(TargetRecord.id == target_id)
