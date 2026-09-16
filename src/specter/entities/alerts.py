@@ -7,6 +7,7 @@ from enum import StrEnum
 from specter.core.errors import InvalidEntityError
 from specter.entities.geometry import NormalizedBoundingBox
 from specter.entities.rules import CrossingDirection, RuleKind
+from specter.entities.targets import EmbeddingModality
 from specter.entities.validation import require_non_negative, require_ratio
 
 
@@ -51,6 +52,8 @@ class IdentityMatchAlert:
     track_id: int
     watchlist_id: str
     target_id: str
+    # A face match is much stronger evidence than an appearance match, which clothing can fool.
+    modality: EmbeddingModality
     similarity_ratio: float
     margin_ratio: float
     object_class: str

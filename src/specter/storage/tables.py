@@ -48,7 +48,8 @@ class WatchlistRecord(Model):
     name = CharField()
     target_type = CharField()
     kind = CharField()
-    match_threshold_ratio = FloatField()
+    face_match_threshold_ratio = FloatField()
+    appearance_match_threshold_ratio = FloatField()
     metadata_json = TextField()
     created_at = CharField()
 
@@ -96,14 +97,27 @@ class ReferenceImageRecord(Model):
         index=True, constraints=[SQL("REFERENCES targets (id) ON DELETE CASCADE")]
     )
     image_path = TextField()
-    status = CharField()
-    quality_json = TextField(null=True)
-    rejection_reason = CharField(null=True)
-    model_version = CharField(null=True)
     created_at = CharField()
 
     class Meta:
         table_name = "reference_images"
+
+
+class ImageEmbeddingRecord(Model):
+    """A row of the ``image_embeddings`` table: one kind of embedding of a reference image."""
+
+    reference_image_id = CharField(
+        constraints=[SQL("REFERENCES reference_images (id) ON DELETE CASCADE")]
+    )
+    modality = CharField()
+    status = CharField(index=True)
+    quality_json = TextField(null=True)
+    rejection_reason = CharField(null=True)
+    model_version = CharField(null=True)
+
+    class Meta:
+        table_name = "image_embeddings"
+        primary_key = CompositeKey("reference_image_id", "modality")
 
 
 class ZoneRecord(Model):
@@ -166,6 +180,7 @@ class IdentityMatchAlertRecord(Model):
     track_id = IntegerField()
     watchlist_id = CharField()
     target_id = CharField()
+    modality = CharField()
     similarity_ratio = FloatField()
     margin_ratio = FloatField()
     object_class = CharField()
@@ -226,6 +241,7 @@ RECORD_TYPES: tuple[type[Model], ...] = (
     CameraWatchlistRecord,
     TargetRecord,
     ReferenceImageRecord,
+    ImageEmbeddingRecord,
     ZoneRecord,
     ZoneOccupancyRuleRecord,
     LineCrossingRuleRecord,

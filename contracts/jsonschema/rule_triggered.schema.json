@@ -126,7 +126,7 @@
       "title": "Schema Version",
       "type": "string"
     },
-    "snapshot_url": {
+    "snapshot_path": {
       "anyOf": [
         {
           "type": "string"
@@ -136,7 +136,7 @@
         }
       ],
       "default": null,
-      "title": "Snapshot Url"
+      "title": "Snapshot Path"
     },
     "track_id": {
       "minimum": 0,

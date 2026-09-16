@@ -1,0 +1,143 @@
+# Models that each hardware profile runs, and where their files come from.
+#
+# A file with a download entry is fetched from its original release when the detector starts and
+# checked against its SHA-256. Every other file is produced by `make models`, which runs the export
+# recipe of its model inside a Docker container.
+
+models:
+  yolo26n_320_ncnn:
+    format: ncnn
+    input_width: 320
+    input_height: 320
+    files:
+      - path: yolo26n_320.ncnn.param
+      - path: yolo26n_320.ncnn.bin
+    export:
+      kind: ultralytics
+      weights: yolo26n.pt
+
+  yolo26s_640_onnx:
+    format: onnx
+    input_width: 640
+    input_height: 640
+    files:
+      - path: yolo26s_640.onnx
+    export:
+      kind: ultralytics
+      weights: yolo26s.pt
+
+  scrfd_10g_onnx:
+    format: onnx
+    input_width: 640
+    input_height: 640
+    files:
+      - path: insightface/det_10g.onnx
+        sha256: 5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91
+        download:
+          archive_url: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+          archive_member: det_10g.onnx
+
+  arcface_r50_onnx:
+    format: onnx
+    input_width: 112
+    input_height: 112
+    embedding_size: 512
+    files:
+      - path: insightface/w600k_r50.onnx
+        sha256: 4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43
+        download:
+          archive_url: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+          archive_member: w600k_r50.onnx
+
+  scrfd_500m_onnx:
+    format: onnx
+    input_width: 320
+    input_height: 320
+    files:
+      - path: insightface/det_500m.onnx
+        sha256: 5e4447f50245bbd7966bd6c0fa52938c61474a04ec7def48753668a9d8b4ea3a
+        download:
+          archive_url: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip
+          archive_member: det_500m.onnx
+
+  arcface_mobilefacenet_onnx:
+    format: onnx
+    input_width: 112
+    input_height: 112
+    embedding_size: 512
+    files:
+      - path: insightface/w600k_mbf.onnx
+        sha256: 9cc6e4a75f0e2bf0b1aed94578f144d15175f357bdc05e815e5c4a02b319eb4f
+        download:
+          archive_url: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip
+          archive_member: w600k_mbf.onnx
+
+  scrfd_500m_320_ncnn:
+    format: ncnn
+    input_width: 320
+    input_height: 320
+    files:
+      - path: scrfd_500m_320.ncnn.param
+      - path: scrfd_500m_320.ncnn.bin
+    export:
+      kind: pnnx
+      source_model: scrfd_500m_onnx
+
+  arcface_mobilefacenet_ncnn:
+    format: ncnn
+    input_width: 112
+    input_height: 112
+    embedding_size: 512
+    files:
+      - path: arcface_mobilefacenet.ncnn.param
+      - path: arcface_mobilefacenet.ncnn.bin
+    export:
+      kind: pnnx
+      source_model: arcface_mobilefacenet_onnx
+
+  osnet_x0_25_onnx:
+    format: onnx
+    input_width: 128
+    input_height: 256
+    embedding_size: 512
+    files:
+      - path: osnet_x0_25.onnx
+    export:
+      kind: osnet
+      variant: osnet_x0_25
+      weights_url: https://huggingface.co/kaiyangzhou/osnet/resolve/main/osnet_x0_25_msmt17_combineall_256x128_amsgrad_ep150_stp60_lr0.0015_b64_fb10_softmax_labelsmooth_flip_jitter.pth
+      definition_url: https://raw.githubusercontent.com/KaiyangZhou/deep-person-reid/f8cd150fdf77e8d9e1ed143b7f308c2c609ded50/torchreid/models/osnet.py
+
+  osnet_x0_25_ncnn:
+    format: ncnn
+    input_width: 128
+    input_height: 256
+    embedding_size: 512
+    files:
+      - path: osnet_x0_25.ncnn.param
+      - path: osnet_x0_25.ncnn.bin
+    export:
+      kind: pnnx
+      source_model: osnet_x0_25_onnx
+
+profiles:
+  raspberry-pi:
+    object_detection: yolo26n_320_ncnn
+    face_detection: scrfd_500m_320_ncnn
+    face_recognition: arcface_mobilefacenet_ncnn
+    appearance: osnet_x0_25_ncnn
+  pc-cpu:
+    object_detection: yolo26s_640_onnx
+    face_detection: scrfd_10g_onnx
+    face_recognition: arcface_r50_onnx
+    appearance: osnet_x0_25_onnx
+  pc-nvidia:
+    object_detection: yolo26s_640_onnx
+    face_detection: scrfd_10g_onnx
+    face_recognition: arcface_r50_onnx
+    appearance: osnet_x0_25_onnx
+  jetson:
+    object_detection: yolo26s_640_onnx
+    face_detection: scrfd_10g_onnx
+    face_recognition: arcface_r50_onnx
+    appearance: osnet_x0_25_onnx

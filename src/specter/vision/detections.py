@@ -27,3 +27,17 @@ class Track:
     detection: Detection
     first_seen_at: datetime
     age_frame_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class FaceDetection:
+    """A face found in an image, with the five landmarks that face alignment needs."""
+
+    confidence_ratio: float
+    bounding_box: BoundingBox
+    # Left eye, right eye, nose tip, left mouth corner and right mouth corner, as (x, y) pixels.
+    landmarks: tuple[tuple[float, float], ...]
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.confidence_ratio <= 1.0:
+            raise ValueError(f"confidence must be between 0 and 1, got {self.confidence_ratio}")

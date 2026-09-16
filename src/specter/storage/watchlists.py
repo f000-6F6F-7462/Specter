@@ -17,7 +17,8 @@ def save_watchlist(watchlist: Watchlist) -> None:
         "name": watchlist.name,
         "target_type": watchlist.target_type.value,
         "kind": watchlist.kind.value,
-        "match_threshold_ratio": watchlist.match_threshold_ratio,
+        "face_match_threshold_ratio": watchlist.face_match_threshold_ratio,
+        "appearance_match_threshold_ratio": watchlist.appearance_match_threshold_ratio,
         "metadata_json": dump_json(dict(watchlist.metadata)),
     }
     updated_row_count = (
@@ -77,6 +78,7 @@ def _build_watchlist(record: WatchlistRecord) -> Watchlist:
         name=record.name,
         target_type=TargetType(record.target_type),
         kind=WatchlistKind(record.kind),
-        match_threshold_ratio=record.match_threshold_ratio,
+        face_match_threshold_ratio=record.face_match_threshold_ratio,
+        appearance_match_threshold_ratio=record.appearance_match_threshold_ratio,
         metadata=load_json(record.metadata_json),
     )

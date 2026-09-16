@@ -9,25 +9,38 @@ description = "Real-time multi-camera edge vision engine: face recognition, obje
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "av>=18.1.0",
     "cryptography>=50.0.1",
     "fastapi>=0.141.1",
+    "httpx>=0.28.1",
     "nats-py>=2.15.0",
     "numpy>=2.5.3",
+    "opencv-python>=5.0.0.93",
     "peewee>=4.5.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
     "qdrant-client>=1.19.0",
+    "trackers>=2.6.0",
     "uvicorn>=0.53.0",
 ]
 
 [project.scripts]
 specter = "specter.command_line:main"
 
+[project.optional-dependencies]
+onnxruntime = [
+    "onnxruntime>=1.30.0",
+]
+ncnn = [
+    "ncnn>=1.0.20260526",
+]
+
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "mypy>=2.3.1",
+    "ncnn>=1.0.20260526",
+    "onnxruntime>=1.30.0",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
@@ -101,11 +114,17 @@ plugins = ["pydantic.mypy"]
 explicit_package_bases = true
 mypy_path = "src:."
 
+[[tool.mypy.overrides]]
+# Neither inference runtime ships type information.
+module = ["ncnn", "onnxruntime"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-ra --strict-markers --import-mode=importlib -m 'not integration and not hardware'"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not integration and not hardware and not models'"
 markers = [
     "integration: needs real services such as nats-server, Qdrant or FFmpeg",
-    "hardware: needs a specific accelerator such as Hailo or CUDA",
+    "hardware: needs a specific accelerator such as CUDA or TensorRT",
+    "models: needs the model files and test images that make models produces",
 ]

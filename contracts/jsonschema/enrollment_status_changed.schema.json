@@ -1,5 +1,14 @@
 {
   "$defs": {
+    "EmbeddingModality": {
+      "description": "What an embedding describes.",
+      "enum": [
+        "face",
+        "appearance"
+      ],
+      "title": "EmbeddingModality",
+      "type": "string"
+    },
     "ImageStatus": {
       "description": "Where a reference image is in enrollment.",
       "enum": [
@@ -21,6 +30,9 @@
         "extreme_pose",
         "too_dark",
         "too_bright",
+        "no_person_detected",
+        "multiple_people",
+        "unreadable_image",
         "processing_failed"
       ],
       "title": "RejectionReason",
@@ -28,11 +40,14 @@
     }
   },
   "additionalProperties": false,
-  "description": "A reference image was embedded or rejected.",
+  "description": "One kind of embedding of a reference image was enrolled or rejected.",
   "properties": {
     "message_id": {
       "title": "Message Id",
       "type": "string"
+    },
+    "modality": {
+      "$ref": "#/$defs/EmbeddingModality"
     },
     "occurred_at": {
       "format": "date-time",
@@ -90,6 +105,7 @@
     "owner_id",
     "target_id",
     "reference_image_id",
+    "modality",
     "status"
   ],
   "title": "EnrollmentStatusChangedMessage",

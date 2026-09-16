@@ -51,6 +51,10 @@ class RejectionReason(StrEnum):
     EXTREME_POSE = "extreme_pose"
     TOO_DARK = "too_dark"
     TOO_BRIGHT = "too_bright"
+    NO_PERSON_DETECTED = "no_person_detected"
+    MULTIPLE_PEOPLE = "multiple_people"
+    # The image file is missing or cannot be decoded, which no retry can fix.
+    UNREADABLE_IMAGE = "unreadable_image"
     # Enrollment kept failing for a reason unrelated to the image, such as a detector error.
     PROCESSING_FAILED = "processing_failed"
 
@@ -67,27 +71,28 @@ class QualityReport:
     brightness_ratio: float
 
 
-# Objects are found by rules rather than recognized as individuals, so they have no embeddings.
+# Only people are recognized as individuals; vehicles and other objects are found by rules, because
+# the appearance model is trained on people and tells vehicles apart poorly.
 EMBEDDING_MODALITIES_BY_TARGET_TYPE: Mapping[TargetType, tuple[EmbeddingModality, ...]] = {
     TargetType.PERSON: (EmbeddingModality.FACE, EmbeddingModality.APPEARANCE),
-    TargetType.VEHICLE: (EmbeddingModality.APPEARANCE,),
+    TargetType.VEHICLE: (),
     TargetType.OBJECT: (),
 }
 
 
 @dataclass(frozen=True, slots=True)
-class ReferenceImage:
-    """A photo of a target that is embedded for matching."""
+class ImageEmbedding:
+    """Where one kind of embedding of a reference image is in enrollment."""
 
-    id: str
-    # Relative to the data directory, so the data directory can move between devices.
-    image_path: str
+    modality: EmbeddingModality
     status: ImageStatus = ImageStatus.PENDING
+    # Only faces are measured; an appearance embedding has no quality report.
     quality: QualityReport | None = None
     rejection_reason: RejectionReason | None = None
+    # The model that produced the embedding, since embeddings of different models do not compare.
     model_version: str | None = None
 
-    def mark_embedded(self, quality: QualityReport, model_version: str) -> "ReferenceImage":
+    def mark_embedded(self, quality: QualityReport | None, model_version: str) -> "ImageEmbedding":
         """Returns a copy marked as embedded by the given model."""
         return replace(
             self,
@@ -99,9 +104,43 @@ class ReferenceImage:
 
     def mark_rejected(
         self, reason: RejectionReason, quality: QualityReport | None
-    ) -> "ReferenceImage":
+    ) -> "ImageEmbedding":
         """Returns a copy marked as rejected for the given reason."""
-        return replace(self, status=ImageStatus.REJECTED, quality=quality, rejection_reason=reason)
+        return replace(
+            self,
+            status=ImageStatus.REJECTED,
+            quality=quality,
+            rejection_reason=reason,
+            model_version=None,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceImage:
+    """A photo of a target, with the enrollment of each kind of embedding taken from it."""
+
+    id: str
+    # Relative to the data directory, so the data directory can move between devices.
+    image_path: str
+    embeddings: tuple[ImageEmbedding, ...] = ()
+
+    def __post_init__(self) -> None:
+        require_unique([embedding.modality for embedding in self.embeddings], "image modalities")
+
+    def find_embedding(self, modality: EmbeddingModality) -> ImageEmbedding | None:
+        """Returns the image's embedding of the given kind, or None if it has none."""
+        return next(
+            (embedding for embedding in self.embeddings if embedding.modality is modality), None
+        )
+
+    def with_embedding(self, embedding: ImageEmbedding) -> "ReferenceImage":
+        """Returns a copy with the embedding, replacing an existing one of the same kind."""
+        other_embeddings = tuple(
+            existing_embedding
+            for existing_embedding in self.embeddings
+            if existing_embedding.modality is not embedding.modality
+        )
+        return replace(self, embeddings=(*other_embeddings, embedding))
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,29 +166,32 @@ class Target:
         return EMBEDDING_MODALITIES_BY_TARGET_TYPE[self.target_type]
 
     @property
-    def embedded_images(self) -> tuple[ReferenceImage, ...]:
-        """Reference images that are ready for matching."""
-        return tuple(
-            image for image in self.reference_images if image.status is ImageStatus.EMBEDDED
-        )
-
-    @property
     def enrollment_status(self) -> EnrollmentStatus:
-        """Summarizes the reference images into the target's enrollment progress.
+        """Summarizes every embedding of every reference image into the enrollment progress.
 
-        Ready when every image is embedded, partial when only some are, failed when all were
+        Ready when every embedding is embedded, partial when only some are, failed when all were
         rejected, and queued otherwise.
         """
-        if not self.reference_images:
+        statuses = [
+            embedding.status for image in self.reference_images for embedding in image.embeddings
+        ]
+        if not statuses:
             return EnrollmentStatus.QUEUED
-        embedded_count = len(self.embedded_images)
-        if embedded_count == len(self.reference_images):
+        if all(status is ImageStatus.EMBEDDED for status in statuses):
             return EnrollmentStatus.READY
-        if embedded_count > 0:
+        if ImageStatus.EMBEDDED in statuses:
             return EnrollmentStatus.PARTIAL
-        if all(image.status is ImageStatus.REJECTED for image in self.reference_images):
+        if all(status is ImageStatus.REJECTED for status in statuses):
             return EnrollmentStatus.FAILED
         return EnrollmentStatus.QUEUED
+
+    def create_reference_image(self, image_id: str, image_path: str) -> ReferenceImage:
+        """Returns a new reference image waiting to be embedded in every kind the target uses."""
+        return ReferenceImage(
+            id=image_id,
+            image_path=image_path,
+            embeddings=tuple(ImageEmbedding(modality) for modality in self.embedding_modalities),
+        )
 
     def find_reference_image(self, image_id: str) -> ReferenceImage | None:
         """Returns the reference image with the id, or None if the target has none."""

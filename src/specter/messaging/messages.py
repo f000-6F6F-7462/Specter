@@ -68,6 +68,7 @@ class MatchConfirmedMessage(SpecterMessage):
     track_id: int = Field(ge=0)
     watchlist_id: str
     target_id: str
+    modality: EmbeddingModality
     similarity_ratio: float = Field(ge=0.0, le=1.0)
     margin_ratio: float = Field(ge=0.0, le=1.0)
     threshold_ratio: float = Field(ge=0.0, le=1.0)
@@ -75,7 +76,8 @@ class MatchConfirmedMessage(SpecterMessage):
     bounding_box: MessageBoundingBox
     first_seen_at: AwareDatetime
     frame_captured_at: AwareDatetime
-    snapshot_url: str | None = None
+    # Relative to the data directory; None when the snapshot could not be written.
+    snapshot_path: str | None = None
 
 
 class RuleTriggeredMessage(SpecterMessage):
@@ -91,7 +93,8 @@ class RuleTriggeredMessage(SpecterMessage):
     dwell_seconds: float | None = Field(default=None, ge=0.0)
     crossing_direction: CrossingDirection | None = None
     frame_captured_at: AwareDatetime
-    snapshot_url: str | None = None
+    # Relative to the data directory; None when the snapshot could not be written.
+    snapshot_path: str | None = None
 
 
 class CameraStatusChangedMessage(SpecterMessage):
@@ -103,19 +106,19 @@ class CameraStatusChangedMessage(SpecterMessage):
 
 
 class EnrollmentJobMessage(SpecterMessage):
-    """A reference image is waiting to be embedded by the detector."""
+    """One kind of embedding of a reference image is waiting to be enrolled by the detector."""
 
     target_id: str
     reference_image_id: str
-    image_path: str
     modality: EmbeddingModality
 
 
 class EnrollmentStatusChangedMessage(SpecterMessage):
-    """A reference image was embedded or rejected."""
+    """One kind of embedding of a reference image was enrolled or rejected."""
 
     target_id: str
     reference_image_id: str
+    modality: EmbeddingModality
     status: ImageStatus
     rejection_reason: RejectionReason | None = None
     quality_score_ratio: float | None = Field(default=None, ge=0.0, le=1.0)

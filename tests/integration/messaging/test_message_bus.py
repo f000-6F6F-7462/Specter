@@ -6,18 +6,20 @@ from functools import partial
 
 import nats
 import pytest
+from nats.errors import NoRespondersError
 from nats.js.api import RetentionPolicy, StreamConfig
 
 from specter.config.settings import MatchingSettings
-from specter.entities.cameras import CameraStatus
 from specter.entities.targets import EmbeddingModality, ImageStatus
-from specter.messaging.client import EnrollmentJobWorker, JobDelivery, MessageBus
+from specter.messaging.client import JobDelivery, JobWorker, MessageBus
 from specter.messaging.messages import (
-    CameraStatusChangedMessage,
+    ChangeKind,
+    ConfigurationChangedMessage,
     EnrollmentJobMessage,
     EnrollmentStatusChangedMessage,
+    EntityKind,
 )
-from specter.messaging.streams import EVENTS_STREAM, WorkQueueConsumerDefinition
+from specter.messaging.streams import EVENTS_STREAM, JobConsumerDefinition
 from specter.messaging.subjects import build_message_subject
 
 pytestmark = pytest.mark.integration
@@ -30,7 +32,7 @@ UNPARSEABLE_JOB_WAIT_SECONDS = 1.0
 
 
 @pytest.fixture
-async def job_consumer(nats_server_url: str) -> AsyncIterator[WorkQueueConsumerDefinition]:
+async def job_consumer(nats_server_url: str) -> AsyncIterator[JobConsumerDefinition]:
     # A private work queue per test, so jobs never reach a real detector or another test.
     unique_suffix = time.time_ns()
     stream_name = f"TEST_JOBS_{unique_suffix}"
@@ -41,7 +43,7 @@ async def job_consumer(nats_server_url: str) -> AsyncIterator[WorkQueueConsumerD
         StreamConfig(name=stream_name, subjects=[subject], retention=RetentionPolicy.WORK_QUEUE)
     )
     try:
-        yield WorkQueueConsumerDefinition(
+        yield JobConsumerDefinition(
             name="test_workers",
             stream_name=stream_name,
             subject=subject,
@@ -69,6 +71,7 @@ async def test_message_is_stored_once_when_published_twice(
         owner_id=unique_owner_id,
         target_id="target_jane",
         reference_image_id="image_1",
+        modality=EmbeddingModality.FACE,
         status=ImageStatus.EMBEDDED,
     )
 
@@ -86,35 +89,27 @@ async def test_message_is_stored_once_when_published_twice(
     assert stream_info.state.subjects == {subject: 1}
 
 
-async def test_latest_status_then_new_ones_are_delivered_when_subscribing_from_latest(
-    message_bus: MessageBus, unique_owner_id: str, unique_camera_id: str
+async def test_latest_change_then_new_ones_are_delivered_when_following_configuration(
+    message_bus: MessageBus, unique_owner_id: str
 ) -> None:
-    await message_bus.publish(
-        build_camera_status_message(unique_owner_id, unique_camera_id, CameraStatus.STARTING)
-    )
-    running_message = build_camera_status_message(
-        unique_owner_id, unique_camera_id, CameraStatus.RUNNING
-    )
-    await message_bus.publish(running_message)
-    received_messages: asyncio.Queue[CameraStatusChangedMessage] = asyncio.Queue()
+    await message_bus.publish(build_configuration_change(unique_owner_id, "camera_older"))
+    await message_bus.publish(build_configuration_change(unique_owner_id, "camera_latest"))
+    received_entity_ids: asyncio.Queue[str] = asyncio.Queue()
 
-    await message_bus.subscribe_from_latest(
-        build_message_subject(running_message), CameraStatusChangedMessage, received_messages.put
+    await message_bus.subscribe_to_configuration_changes(
+        partial(
+            record_owner_change, owner_id=unique_owner_id, received_entity_ids=received_entity_ids
+        )
     )
-    first_received = await asyncio.wait_for(received_messages.get(), DELIVERY_TIMEOUT_SECONDS)
-    await message_bus.publish(
-        build_camera_status_message(unique_owner_id, unique_camera_id, CameraStatus.STOPPED)
-    )
-    second_received = await asyncio.wait_for(received_messages.get(), DELIVERY_TIMEOUT_SECONDS)
+    first_received = await asyncio.wait_for(received_entity_ids.get(), DELIVERY_TIMEOUT_SECONDS)
+    await message_bus.publish(build_configuration_change(unique_owner_id, "camera_newer"))
+    second_received = await asyncio.wait_for(received_entity_ids.get(), DELIVERY_TIMEOUT_SECONDS)
 
-    assert (first_received.status, second_received.status) == (
-        CameraStatus.RUNNING,
-        CameraStatus.STOPPED,
-    )
+    assert (first_received, second_received) == ("camera_latest", "camera_newer")
 
 
 async def test_job_is_delivered_again_until_handler_succeeds(
-    message_bus: MessageBus, nats_server_url: str, job_consumer: WorkQueueConsumerDefinition
+    message_bus: MessageBus, nats_server_url: str, job_consumer: JobConsumerDefinition
 ) -> None:
     await publish_job(
         nats_server_url, job_consumer.subject, build_enrollment_job().model_dump_json()
@@ -129,7 +124,7 @@ async def test_job_is_delivered_again_until_handler_succeeds(
     )
 
     await asyncio.wait_for(
-        EnrollmentJobWorker(message_bus, handle_job, job_consumer).run(shutdown_requested),
+        JobWorker(message_bus, job_consumer, handle_job).run(shutdown_requested),
         DELIVERY_TIMEOUT_SECONDS,
     )
 
@@ -141,7 +136,7 @@ async def test_job_is_delivered_again_until_handler_succeeds(
 
 
 async def test_last_attempt_is_marked_when_job_keeps_failing(
-    message_bus: MessageBus, nats_server_url: str, job_consumer: WorkQueueConsumerDefinition
+    message_bus: MessageBus, nats_server_url: str, job_consumer: JobConsumerDefinition
 ) -> None:
     await publish_job(
         nats_server_url, job_consumer.subject, build_enrollment_job().model_dump_json()
@@ -156,7 +151,7 @@ async def test_last_attempt_is_marked_when_job_keeps_failing(
     )
 
     await asyncio.wait_for(
-        EnrollmentJobWorker(message_bus, handle_job, job_consumer).run(shutdown_requested),
+        JobWorker(message_bus, job_consumer, handle_job).run(shutdown_requested),
         DELIVERY_TIMEOUT_SECONDS,
     )
 
@@ -165,7 +160,7 @@ async def test_last_attempt_is_marked_when_job_keeps_failing(
 
 
 async def test_job_is_dropped_without_handling_when_it_cannot_be_parsed(
-    message_bus: MessageBus, nats_server_url: str, job_consumer: WorkQueueConsumerDefinition
+    message_bus: MessageBus, nats_server_url: str, job_consumer: JobConsumerDefinition
 ) -> None:
     await publish_job(nats_server_url, job_consumer.subject, "not a job")
     deliveries: list[JobDelivery] = []
@@ -179,7 +174,7 @@ async def test_job_is_dropped_without_handling_when_it_cannot_be_parsed(
     )
 
     await asyncio.wait_for(
-        EnrollmentJobWorker(message_bus, handle_job, job_consumer).run(shutdown_requested),
+        JobWorker(message_bus, job_consumer, handle_job).run(shutdown_requested),
         DELIVERY_TIMEOUT_SECONDS,
     )
 
@@ -187,12 +182,25 @@ async def test_job_is_dropped_without_handling_when_it_cannot_be_parsed(
     assert await count_unfinished_jobs(nats_server_url, job_consumer) == 0
 
 
-def build_camera_status_message(
-    owner_id: str, camera_id: str, status: CameraStatus
-) -> CameraStatusChangedMessage:
-    return CameraStatusChangedMessage(
-        occurred_at=datetime.now(UTC), owner_id=owner_id, camera_id=camera_id, status=status
+def build_configuration_change(owner_id: str, entity_id: str) -> ConfigurationChangedMessage:
+    return ConfigurationChangedMessage(
+        occurred_at=datetime.now(UTC),
+        owner_id=owner_id,
+        entity_kind=EntityKind.CAMERA,
+        entity_id=entity_id,
+        change_kind=ChangeKind.UPDATED,
     )
+
+
+async def record_owner_change(
+    message: ConfigurationChangedMessage,
+    *,
+    owner_id: str,
+    received_entity_ids: asyncio.Queue[str],
+) -> None:
+    # Every owner's latest change is delivered, including those left by earlier test runs.
+    if message.owner_id == owner_id:
+        await received_entity_ids.put(message.entity_id)
 
 
 def build_enrollment_job() -> EnrollmentJobMessage:
@@ -201,19 +209,19 @@ def build_enrollment_job() -> EnrollmentJobMessage:
         owner_id="owner_tests",
         target_id="target_jane",
         reference_image_id="image_1",
-        image_path="reference_images/image_1.jpg",
         modality=EmbeddingModality.FACE,
     )
 
 
 async def fail_before_attempt(
-    job: EnrollmentJobMessage,
+    raw_job: bytes,
     delivery: JobDelivery,
     *,
     successful_attempt_number: int | None,
     deliveries: list[JobDelivery],
     shutdown_requested: asyncio.Event,
 ) -> None:
+    job = EnrollmentJobMessage.model_validate_json(raw_job)
     deliveries.append(delivery)
     if delivery.attempt_number == successful_attempt_number or delivery.is_last_attempt:
         shutdown_requested.set()
@@ -229,7 +237,7 @@ async def publish_job(nats_server_url: str, subject: str, payload: str) -> None:
         await connection.close()
 
 
-async def count_unfinished_jobs(nats_server_url: str, consumer: WorkQueueConsumerDefinition) -> int:
+async def count_unfinished_jobs(nats_server_url: str, consumer: JobConsumerDefinition) -> int:
     connection = await nats.connect(nats_server_url)
     try:
         consumer_info = await connection.jetstream().consumer_info(
@@ -239,3 +247,23 @@ async def count_unfinished_jobs(nats_server_url: str, consumer: WorkQueueConsume
         await connection.close()
     unfinished_job_count: int = consumer_info.num_pending + consumer_info.num_ack_pending
     return unfinished_job_count
+
+
+async def echo(raw_request: bytes) -> bytes:
+    return raw_request.upper()
+
+
+async def test_reply_arrives_when_a_server_answers_the_request(message_bus: MessageBus) -> None:
+    subject = f"specter.tests.echo.{time.time_ns()}"
+    await message_bus.serve_requests(subject, "test_servers", echo)
+
+    reply = await message_bus.request(subject, b"hello", DELIVERY_TIMEOUT_SECONDS)
+
+    assert reply == b"HELLO"
+
+
+async def test_request_fails_at_once_when_no_server_is_subscribed(message_bus: MessageBus) -> None:
+    with pytest.raises(NoRespondersError):
+        await message_bus.request(
+            f"specter.tests.nobody.{time.time_ns()}", b"hello", DELIVERY_TIMEOUT_SECONDS
+        )

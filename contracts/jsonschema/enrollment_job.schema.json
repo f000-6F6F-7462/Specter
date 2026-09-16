@@ -11,12 +11,8 @@
     }
   },
   "additionalProperties": false,
-  "description": "A reference image is waiting to be embedded by the detector.",
+  "description": "One kind of embedding of a reference image is waiting to be enrolled by the detector.",
   "properties": {
-    "image_path": {
-      "title": "Image Path",
-      "type": "string"
-    },
     "message_id": {
       "title": "Message Id",
       "type": "string"
@@ -52,7 +48,6 @@
     "owner_id",
     "target_id",
     "reference_image_id",
-    "image_path",
     "modality"
   ],
   "title": "EnrollmentJobMessage",

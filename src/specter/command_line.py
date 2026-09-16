@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import os
 from collections.abc import Sequence
 from functools import partial
 from pathlib import Path
@@ -46,6 +47,9 @@ def main(arguments: Sequence[str] | None = None) -> None:
     except (ConfigurationError, ValidationError) as error:
         parser.exit(CONFIGURATION_ERROR_EXIT_CODE, f"specter: invalid settings: {error}\n")
     configure_logging(settings.logging.level, settings.logging.format)
+    if parsed_arguments.config is not None:
+        # Processes started from this one, such as camera processes, load the same file.
+        os.environ[CONFIG_FILE_ENVIRONMENT_VARIABLE] = str(parsed_arguments.config)
 
     # Each process imports only its own modules, so a camera process never loads FastAPI.
     match parsed_arguments.command:

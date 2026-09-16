@@ -30,12 +30,12 @@ def test_defaults_apply_when_no_config_file_is_given() -> None:
 
 
 def test_preset_fills_detector_settings_when_detector_is_not_configured(tmp_path: Path) -> None:
-    config_file = write_config_file(tmp_path, "device:\n  hardware_profile: raspberry-pi-hailo\n")
+    config_file = write_config_file(tmp_path, "device:\n  hardware_profile: raspberry-pi\n")
 
     settings = load_settings(config_file)
 
-    assert settings.detector.backend is DetectorBackend.HAILO
-    assert settings.detector.max_batch_size == 8
+    assert settings.detector.backend is DetectorBackend.NCNN
+    assert settings.detector.max_batch_size == 1
 
 
 def test_explicit_detector_field_overrides_preset_when_set_in_file(tmp_path: Path) -> None:
@@ -64,11 +64,11 @@ def test_environment_variable_overrides_file_value_when_both_are_set(
 def test_hardware_profile_from_environment_selects_preset_when_file_has_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SPECTER_DEVICE__HARDWARE_PROFILE", "raspberry-pi-hailo")
+    monkeypatch.setenv("SPECTER_DEVICE__HARDWARE_PROFILE", "raspberry-pi")
 
     settings = load_settings()
 
-    assert settings.detector.backend is DetectorBackend.HAILO
+    assert settings.detector.backend is DetectorBackend.NCNN
 
 
 def test_config_file_from_environment_is_used_when_no_path_is_given(
