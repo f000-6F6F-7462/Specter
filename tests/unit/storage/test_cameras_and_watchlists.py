@@ -8,15 +8,15 @@ from specter.entities.targets import TargetType
 from specter.entities.watchlists import Watchlist
 from specter.storage.cameras import (
     delete_camera,
+    find_camera,
     find_camera_settings,
-    get_camera,
     list_cameras_to_run,
     list_owner_cameras,
     save_camera,
 )
 from specter.storage.credentials import CredentialCipher
 from specter.storage.tables import CameraRecord
-from specter.storage.watchlists import delete_watchlist, get_watchlist, save_watchlist
+from specter.storage.watchlists import delete_watchlist, find_watchlist, save_watchlist
 
 pytestmark = pytest.mark.usefixtures("database")
 
@@ -52,7 +52,7 @@ def test_camera_is_unchanged_when_saved_and_loaded(cipher: CredentialCipher) -> 
 
     save_camera(camera, cipher)
 
-    assert get_camera("camera_front_door", cipher) == camera
+    assert find_camera("camera_front_door", cipher) == camera
 
 
 def test_password_is_not_stored_in_plain_text_when_camera_is_saved(
@@ -71,7 +71,9 @@ def test_saving_replaces_fields_when_camera_already_exists(cipher: CredentialCip
 
     save_camera(build_camera("camera_front_door").start(), cipher)
 
-    assert get_camera("camera_front_door", cipher).should_run
+    camera = find_camera("camera_front_door", cipher)
+    assert camera is not None
+    assert camera.should_run
     assert len(list_owner_cameras(OWNER_ID, cipher)) == 1
 
 
@@ -103,7 +105,9 @@ def test_camera_stops_using_watchlist_when_watchlist_is_deleted(cipher: Credenti
 
     delete_watchlist("watchlist_a")
 
-    assert get_camera("camera_front_door", cipher).watchlist_ids == ()
+    camera = find_camera("camera_front_door", cipher)
+    assert camera is not None
+    assert camera.watchlist_ids == ()
 
 
 def test_watchlist_is_unchanged_when_saved_and_loaded() -> None:
@@ -111,7 +115,7 @@ def test_watchlist_is_unchanged_when_saved_and_loaded() -> None:
 
     save_watchlist(watchlist)
 
-    assert get_watchlist("watchlist_a") == watchlist
+    assert find_watchlist("watchlist_a") == watchlist
 
 
 def test_deleting_fails_when_camera_does_not_exist() -> None:

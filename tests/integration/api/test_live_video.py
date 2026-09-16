@@ -10,8 +10,6 @@ from specter.api.routers.live_video import POLICY_VIOLATION_CLOSE_CODE
 
 pytestmark = pytest.mark.integration
 
-MAXIMUM_WEBSOCKET_MESSAGES = 20
-
 
 @pytest.fixture
 def running_camera_path(

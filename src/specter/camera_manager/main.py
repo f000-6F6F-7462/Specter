@@ -9,7 +9,7 @@ from specter.camera_manager.go2rtc import Go2rtcClient
 from specter.camera_manager.supervisor import CameraManager
 from specter.config.settings import Settings
 from specter.core.shutdown import complete_unless_shutdown
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.shared_state import CameraHealthBucket
 from specter.storage.credentials import CredentialCipher, load_or_create_credentials_key
 from specter.storage.database import DatabaseThread, open_database

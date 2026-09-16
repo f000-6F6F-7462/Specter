@@ -26,7 +26,7 @@ from specter.inference.face_detector import FaceDetector
 from specter.inference.face_embedder import FaceEmbedder
 from specter.inference.face_quality import measure_face_quality
 from specter.inference.object_detector import ObjectDetector
-from specter.messaging.client import JobDelivery, MessageBus
+from specter.messaging.message_bus import JobDelivery, MessageBus
 from specter.messaging.messages import EnrollmentJobMessage, EnrollmentStatusChangedMessage
 from specter.storage.database import DatabaseThread
 from specter.storage.targets import (

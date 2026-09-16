@@ -45,18 +45,6 @@ def find_zone(zone_id: str) -> Zone | None:
     return _build_zone(record) if record is not None else None
 
 
-def get_zone(zone_id: str) -> Zone:
-    """Returns the zone.
-
-    Raises:
-        NotFoundError: The zone does not exist.
-    """
-    zone = find_zone(zone_id)
-    if zone is None:
-        raise NotFoundError(f"zone {zone_id} does not exist")
-    return zone
-
-
 def list_camera_zones(camera_id: str) -> list[Zone]:
     """Returns the camera's zones, oldest first."""
     records = (

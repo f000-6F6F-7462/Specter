@@ -3,20 +3,6 @@ import pytest
 from specter.entities.geometry import BoundingBox, NormalizedBoundingBox, NormalizedPoint
 
 
-def test_iou_is_one_when_boxes_are_identical() -> None:
-    box = BoundingBox(x=10, y=10, width=40, height=20)
-
-    assert box.iou(box) == 1.0
-
-
-def test_iou_is_zero_when_boxes_do_not_overlap() -> None:
-    assert BoundingBox(0, 0, 10, 10).iou(BoundingBox(20, 20, 10, 10)) == 0.0
-
-
-def test_iou_is_one_third_when_boxes_overlap_by_half() -> None:
-    assert BoundingBox(0, 0, 10, 10).iou(BoundingBox(5, 0, 10, 10)) == pytest.approx(1 / 3)
-
-
 def test_clip_keeps_only_the_part_inside_the_frame_when_box_extends_past_it() -> None:
     clipped_box = BoundingBox(x=-20, y=300, width=100, height=100).clip_to_frame(640, 360)
 

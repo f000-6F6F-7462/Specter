@@ -38,18 +38,6 @@ def find_watchlist(watchlist_id: str) -> Watchlist | None:
     return _build_watchlist(record) if record is not None else None
 
 
-def get_watchlist(watchlist_id: str) -> Watchlist:
-    """Returns the watchlist.
-
-    Raises:
-        NotFoundError: The watchlist does not exist.
-    """
-    watchlist = find_watchlist(watchlist_id)
-    if watchlist is None:
-        raise NotFoundError(f"watchlist {watchlist_id} does not exist")
-    return watchlist
-
-
 def list_owner_watchlists(owner_id: str) -> list[Watchlist]:
     """Returns the owner's watchlists, oldest first."""
     records = (

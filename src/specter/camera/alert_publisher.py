@@ -10,7 +10,7 @@ from nats.errors import Error as NatsError
 from specter.camera.person_identifier import ConfirmedMatch
 from specter.entities.cameras import Camera
 from specter.entities.geometry import NormalizedBoundingBox
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.messages import (
     MatchConfirmedMessage,
     MessageBoundingBox,

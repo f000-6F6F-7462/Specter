@@ -42,14 +42,6 @@ class BoundingBox:
         height = max(min(self.bottom, frame_height) - top, 1)
         return BoundingBox(x=left, y=top, width=width, height=height)
 
-    def iou(self, other: "BoundingBox") -> float:
-        """Returns the intersection over union with another box, from 0 to 1."""
-        intersection_width = max(min(self.right, other.right) - max(self.x, other.x), 0)
-        intersection_height = max(min(self.bottom, other.bottom) - max(self.y, other.y), 0)
-        intersection_area = intersection_width * intersection_height
-        union_area = self.area + other.area - intersection_area
-        return intersection_area / union_area
-
 
 @dataclass(frozen=True, slots=True)
 class NormalizedPoint:

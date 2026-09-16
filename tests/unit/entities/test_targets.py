@@ -88,19 +88,6 @@ def test_new_image_waits_for_every_modality_of_the_target() -> None:
     ]
 
 
-def test_with_embedding_replaces_the_embedding_of_the_same_modality() -> None:
-    image = build_image("image_1", ImageStatus.PENDING, ImageStatus.PENDING)
-
-    updated_image = image.with_embedding(
-        ImageEmbedding(EmbeddingModality.APPEARANCE).mark_embedded(None, "osnet_x0_25")
-    )
-
-    appearance_embedding = updated_image.find_embedding(EmbeddingModality.APPEARANCE)
-    assert len(updated_image.embeddings) == 2
-    assert appearance_embedding is not None
-    assert appearance_embedding.status is ImageStatus.EMBEDDED
-
-
 def test_with_reference_image_replaces_image_when_id_already_exists() -> None:
     target = build_target(build_image("image_1"), build_image("image_2"))
 

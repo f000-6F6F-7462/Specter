@@ -8,7 +8,7 @@ from fastapi import Depends
 from starlette.requests import HTTPConnection
 
 from specter.config.settings import Settings
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.storage.credentials import CredentialCipher
 from specter.storage.database import DatabaseThread
 from specter.storage.evidence import EvidenceStore

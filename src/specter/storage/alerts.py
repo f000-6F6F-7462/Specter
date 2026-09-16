@@ -79,18 +79,6 @@ def find_alert(alert_id: str) -> Alert | None:
     return None
 
 
-def get_alert(alert_id: str) -> Alert:
-    """Returns the alert of either kind.
-
-    Raises:
-        NotFoundError: The alert does not exist.
-    """
-    alert = find_alert(alert_id)
-    if alert is None:
-        raise NotFoundError(f"alert {alert_id} does not exist")
-    return alert
-
-
 def save_alert_review(alert_id: str, review: AlertReview) -> None:
     """Stores the latest review of an alert.
 

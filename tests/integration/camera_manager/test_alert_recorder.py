@@ -9,7 +9,7 @@ from specter.camera_manager.alert_recorder import AlertRecorder
 from specter.entities.alerts import IdentityMatchAlert, RuleAlert
 from specter.entities.rules import CrossingDirection, RuleKind
 from specter.entities.targets import EmbeddingModality
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.messages import (
     MatchConfirmedMessage,
     MessageBoundingBox,

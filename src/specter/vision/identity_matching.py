@@ -1,7 +1,6 @@
 """Confirms a track's identity from repeated similarities to watchlist targets."""
 
-from collections.abc import Iterable, Mapping, Sequence
-from collections.abc import Set as AbstractSet
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 
@@ -149,14 +148,3 @@ def rank_best_candidate_per_target(candidates: Iterable[Candidate]) -> list[Cand
         key=lambda candidate: candidate.similarity_ratio,
         reverse=True,
     )
-
-
-def remove_ended_track_states(
-    states_by_track_id: Mapping[int, TrackMatchState], active_track_ids: AbstractSet[int]
-) -> dict[int, TrackMatchState]:
-    """Returns the states of tracks that are still active, dropping those of ended tracks."""
-    return {
-        track_id: state
-        for track_id, state in states_by_track_id.items()
-        if track_id in active_track_ids
-    }

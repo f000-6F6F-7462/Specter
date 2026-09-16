@@ -5,7 +5,7 @@ from functools import partial
 
 from specter.entities.alerts import Alert, IdentityMatchAlert, RuleAlert
 from specter.entities.geometry import NormalizedBoundingBox
-from specter.messaging.client import JobDelivery, JobWorker, MessageBus
+from specter.messaging.message_bus import JobDelivery, JobWorker, MessageBus
 from specter.messaging.messages import (
     MatchConfirmedMessage,
     MessageBoundingBox,

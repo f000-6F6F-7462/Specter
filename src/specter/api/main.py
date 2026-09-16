@@ -26,7 +26,7 @@ from specter.api.routers import (
     zones,
 )
 from specter.config.settings import Settings
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.storage.credentials import (
     CredentialCipher,
     load_or_create_credentials_key,

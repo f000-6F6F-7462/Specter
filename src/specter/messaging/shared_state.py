@@ -6,13 +6,9 @@ Keys start with the owner id, so a consumer can watch a single owner's keys.
 from nats.js.errors import KeyNotFoundError, KeyWrongLastSequenceError
 from nats.js.kv import KeyValue
 
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 from specter.messaging.messages import CameraHealthReport
-from specter.messaging.streams import (
-    CAMERA_HEALTH_BUCKET,
-    MATCH_COOLDOWNS_BUCKET_NAME,
-    WATCHLIST_VERSIONS_BUCKET,
-)
+from specter.messaging.streams import CAMERA_HEALTH_BUCKET, MATCH_COOLDOWNS_BUCKET_NAME
 
 KEY_SEPARATOR = "."
 EMPTY_VALUE = b""
@@ -68,30 +64,6 @@ class MatchCooldownBucket:
         except KeyWrongLastSequenceError:
             return False
         return True
-
-
-class WatchlistVersionBucket:
-    """A version per watchlist that grows whenever its targets or reference images change."""
-
-    def __init__(self, bucket: KeyValue) -> None:
-        self._bucket = bucket
-
-    @classmethod
-    async def open(cls, message_bus: MessageBus) -> "WatchlistVersionBucket":
-        """Opens the declared watchlist versions bucket."""
-        return cls(await message_bus.open_bucket(WATCHLIST_VERSIONS_BUCKET.name))
-
-    async def mark_changed(self, owner_id: str, watchlist_id: str) -> int:
-        """Records that the watchlist changed and returns its new version."""
-        return await self._bucket.put(_build_key(owner_id, watchlist_id), EMPTY_VALUE)
-
-    async def read_version(self, owner_id: str, watchlist_id: str) -> int | None:
-        """Returns the watchlist's current version, or None if it never changed."""
-        try:
-            entry = await self._bucket.get(_build_key(owner_id, watchlist_id))
-        except KeyNotFoundError:
-            return None
-        return entry.revision
 
 
 def _build_key(*identifiers: str) -> str:

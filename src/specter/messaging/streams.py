@@ -189,7 +189,6 @@ CAMERA_HEALTH_BUCKET = KeyValueBucketDefinition(
     storage=StorageType.MEMORY,
     time_to_live_seconds=CAMERA_HEALTH_TIME_TO_LIVE_SECONDS,
 )
-WATCHLIST_VERSIONS_BUCKET = KeyValueBucketDefinition(name="watchlist_versions")
 
 
 def build_key_value_bucket_definitions(
@@ -201,4 +200,4 @@ def build_key_value_bucket_definitions(
         storage=StorageType.MEMORY,
         time_to_live_seconds=match_cooldown_seconds,
     )
-    return (CAMERA_HEALTH_BUCKET, match_cooldowns_bucket, WATCHLIST_VERSIONS_BUCKET)
+    return (CAMERA_HEALTH_BUCKET, match_cooldowns_bucket)

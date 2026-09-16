@@ -11,7 +11,7 @@ from nats.js.api import RetentionPolicy, StreamConfig
 
 from specter.config.settings import MatchingSettings
 from specter.entities.targets import EmbeddingModality, ImageStatus
-from specter.messaging.client import JobDelivery, JobWorker, MessageBus
+from specter.messaging.message_bus import JobDelivery, JobWorker, MessageBus
 from specter.messaging.messages import (
     ChangeKind,
     ConfigurationChangedMessage,

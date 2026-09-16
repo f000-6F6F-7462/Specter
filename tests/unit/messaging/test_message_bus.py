@@ -1,7 +1,7 @@
 import asyncio
 
 from specter.core.shutdown import complete_unless_shutdown
-from specter.messaging.client import MessageBus
+from specter.messaging.message_bus import MessageBus
 
 # Nothing listens on port 1, so every connection attempt is refused at once.
 UNREACHABLE_NATS_URL = "nats://127.0.0.1:1"

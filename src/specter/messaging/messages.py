@@ -102,7 +102,6 @@ class CameraStatusChangedMessage(SpecterMessage):
 
     camera_id: str
     status: CameraStatus
-    detail: str | None = None
 
 
 class EnrollmentJobMessage(SpecterMessage):

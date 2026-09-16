@@ -6,7 +6,6 @@ from specter.vision.identity_matching import (
     MatchDecision,
     TrackMatchState,
     rank_best_candidate_per_target,
-    remove_ended_track_states,
 )
 
 POLICY = IdentityMatchPolicy(threshold_ratio=0.78, cooldown_seconds=45.0)
@@ -102,11 +101,3 @@ def test_state_is_unchanged_when_there_are_no_candidates() -> None:
 def test_policy_is_rejected_when_required_hits_exceed_window() -> None:
     with pytest.raises(ValueError, match="required_hit_count"):
         IdentityMatchPolicy(threshold_ratio=0.78, required_hit_count=6, window_sample_count=5)
-
-
-def test_only_active_tracks_keep_state_when_ended_tracks_are_removed() -> None:
-    states_by_track_id = {1: TrackMatchState(), 2: TrackMatchState(), 3: TrackMatchState()}
-
-    remaining_states = remove_ended_track_states(states_by_track_id, active_track_ids={2, 3})
-
-    assert set(remaining_states) == {2, 3}

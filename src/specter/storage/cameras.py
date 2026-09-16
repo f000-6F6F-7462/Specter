@@ -77,18 +77,6 @@ def find_camera_settings(camera_id: str) -> Camera | None:
     return _build_cameras([record], cipher=None, include_credentials=False)[0]
 
 
-def get_camera(camera_id: str, cipher: CredentialCipher | None) -> Camera:
-    """Returns the camera.
-
-    Raises:
-        NotFoundError: The camera does not exist.
-    """
-    camera = find_camera(camera_id, cipher)
-    if camera is None:
-        raise NotFoundError(f"camera {camera_id} does not exist")
-    return camera
-
-
 def list_owner_cameras(owner_id: str, cipher: CredentialCipher | None) -> list[Camera]:
     """Returns the owner's cameras, oldest first."""
     records = (
