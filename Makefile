@@ -1,13 +1,15 @@
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose -f deploy/compose.base.yaml
+# The services plus Specter's own processes, all in Docker.
+COMPOSE_STACK := docker compose -f deploy/compose.base.yaml -f deploy/compose.yaml
 # The development settings keep data, secrets and models inside the repository.
 DEVELOPMENT_CONFIG := config/specter.dev.yaml
 SPECTER := uv run specter --config $(DEVELOPMENT_CONFIG)
 
 .PHONY: help setup install lock upgrade-dependencies format lint type-check test \
 	test-integration test-hardware test-models check ci contracts services-up services-down models migrate \
-	run-api run-camera-manager run-camera run-detector clean clean-development-data require-uv
+	up down logs status api-token run-all run-api run-camera-manager run-camera run-detector clean clean-development-data require-uv
 
 ##@ Setup
 
@@ -76,6 +78,16 @@ models:  ## Export and download every model into ./models (Docker; torch stays i
 migrate: require-uv  ## Apply pending database migrations to the development database
 	$(SPECTER) migrate
 
+# One shell runs the three long-lived processes, so Ctrl+C reaches all of them and each stops
+# cleanly. Camera processes are not listed: the camera manager starts them. A process that dies is
+# not restarted; run it again with its own run-* target.
+run-all: require-uv services-up migrate  ## Start the services, then the API, camera manager and detector; Ctrl+C stops them
+	@trap 'kill $$(jobs -p) 2>/dev/null; wait' INT TERM; \
+	$(SPECTER) api & \
+	$(SPECTER) camera-manager & \
+	$(SPECTER) detector & \
+	wait
+
 run-api: require-uv migrate  ## Run the local HTTP API with the development settings
 	$(SPECTER) api
 
@@ -88,6 +100,26 @@ run-camera: require-uv  ## Run one camera process: make run-camera CAMERA_ID=<id
 
 run-detector: require-uv migrate  ## Run the detector with the development settings
 	$(SPECTER) detector
+
+##@ Docker
+
+# The alternative to the run-* targets: every process runs in a container, restarts when it
+# crashes, and needs no Python on the machine. Do not run it together with run-all or run-api,
+# which use the same ports. Models must exist (make models).
+up:  ## Build and start everything in Docker: services, API, camera manager, detector
+	$(COMPOSE_STACK) up -d --build
+
+down:  ## Stop everything that make up started (data is kept)
+	$(COMPOSE_STACK) down
+
+logs:  ## Follow the logs of every container
+	$(COMPOSE_STACK) logs --follow --tail 100
+
+status:  ## Show the state of every container
+	$(COMPOSE_STACK) ps
+
+api-token:  ## Print the API token of the containerized API
+	@$(COMPOSE_STACK) exec -T api cat /etc/specter/api.token
 
 ##@ Maintenance
 

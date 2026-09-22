@@ -1,0 +1,127 @@
+# Specter's own processes, added to the services in compose.base.yaml. Use the two files together:
+#   docker compose -f deploy/compose.base.yaml -f deploy/compose.yaml up -d --build
+# or simply `make up`.
+#
+# Everything reaches the other services by name on the Compose network. Only the API is published,
+# and only on localhost, so the application server runs on the same device.
+
+x-build: &build
+  context: ..
+  dockerfile: deploy/Dockerfile
+  args:
+    # onnxruntime for pc-cpu, pc-nvidia and jetson; ncnn for raspberry-pi.
+    SPECTER_EXTRA: ${SPECTER_EXTRA:-onnxruntime}
+
+x-environment: &environment
+  SPECTER_DEVICE__HARDWARE_PROFILE: ${SPECTER_HARDWARE_PROFILE:-pc-cpu}
+  SPECTER_SERVICES__NATS_URL: nats://nats:4222
+  SPECTER_SERVICES__QDRANT_URL: http://qdrant:6333
+  SPECTER_SERVICES__GO2RTC_URL: http://go2rtc:1984
+  SPECTER_SERVICES__GO2RTC_RTSP_URL: rtsp://go2rtc:8554
+
+x-volumes: &volumes
+  # One SQLite database, the alert snapshots and the reference images are shared by every process.
+  # It is a named volume, not a bind mount: SQLite's write-ahead log needs a real local filesystem.
+  - specter-data:/var/lib/specter
+  # The API token and the key that encrypts camera passwords. Created on first start.
+  - specter-secrets:/etc/specter
+  # Filled by `make models`. Not read-only: the detector downloads published models that are
+  # missing and works in a temporary directory here. On Linux the directory must be writable by
+  # the container's user (uid 10001): sudo chown -R 10001 models
+  - ../models:/opt/specter/models
+
+# Camera processes hand frames to the detector through POSIX shared memory, which lives in
+# /dev/shm. The two containers share one tmpfs volume mounted there. Sharing the IPC namespace of
+# the camera manager instead (`ipc: service:camera-manager`) breaks silently when it restarts: the
+# detector keeps looking at the old, empty /dev/shm and analysis stops while cameras still report
+# "running". A frame at 1080p takes about 6 MiB per camera, and Docker's default /dev/shm is only
+# 64 MiB, so the volume below is sized for many cameras (memory is used only as frames are held).
+x-volumes-with-shared-memory: &volumes-with-shared-memory
+  - specter-data:/var/lib/specter
+  - specter-secrets:/etc/specter
+  - ../models:/opt/specter/models
+  - specter-frames:/dev/shm
+
+services:
+  # Applies database migrations once, before any process that uses the database starts.
+  migrate:
+    image: specter:local
+    build: *build
+    command: ["migrate"]
+    environment: *environment
+    volumes: *volumes
+    restart: "no"
+
+  api:
+    image: specter:local
+    build: *build
+    command: ["api"]
+    environment:
+      <<: *environment
+      # Inside the container the API must listen on every interface for the published port.
+      SPECTER_API__HOST: 0.0.0.0
+    volumes: *volumes
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      nats: {condition: service_healthy}
+      qdrant: {condition: service_started}
+      go2rtc: {condition: service_started}
+    restart: unless-stopped
+
+  # Starts one camera process per running camera, inside this container.
+  camera-manager:
+    image: specter:local
+    build: *build
+    command: ["camera-manager"]
+    environment: *environment
+    volumes: *volumes-with-shared-memory
+    # Lets the manager stop every camera process cleanly, and reaps them if it is killed.
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      nats: {condition: service_healthy}
+      qdrant: {condition: service_started}
+      go2rtc: {condition: service_started}
+    restart: unless-stopped
+
+  detector:
+    image: specter:local
+    build: *build
+    command: ["detector"]
+    environment: *environment
+    volumes: *volumes-with-shared-memory
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      nats: {condition: service_healthy}
+      qdrant: {condition: service_started}
+      camera-manager: {condition: service_started}
+    # Qdrant has no health check, so a detector that starts before it is ready stops, and is
+    # started again here.
+    restart: unless-stopped
+
+volumes:
+  specter-data:
+  specter-secrets:
+  specter-frames:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      # Writable by the container's user; the sticky bit keeps processes from removing each
+      # other's regions, as in a normal /dev/shm.
+      o: size=1g,mode=1777
