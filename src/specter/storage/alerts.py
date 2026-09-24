@@ -1,13 +1,15 @@
 """Reading and writing alerts and their reviews."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
+from typing import cast
 
-from peewee import Expression
+from peewee import Expression, fn
 
 from specter.core.errors import NotFoundError
 from specter.entities.alerts import (
     Alert,
+    AlertKind,
     AlertReview,
     Disposition,
     IdentityMatchAlert,
@@ -20,6 +22,13 @@ from specter.storage.columns import format_utc_timestamp, parse_utc_timestamp
 from specter.storage.tables import IdentityMatchAlertRecord, RuleAlertRecord
 
 type AlertRecordType = type[IdentityMatchAlertRecord] | type[RuleAlertRecord]
+
+RECORD_TYPE_BY_KIND: dict[AlertKind, AlertRecordType] = {
+    AlertKind.IDENTITY_MATCH: IdentityMatchAlertRecord,
+    AlertKind.RULE: RuleAlertRecord,
+}
+# Stored timestamps start with the UTC date, as YYYY-MM-DD.
+DATE_TEXT_LENGTH = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,11 +43,39 @@ class AlertPosition:
 class AlertFilter:
     """Which of an owner's alerts to list."""
 
-    camera_id: str | None = None
+    # None means every camera; an empty set matches no alert.
+    camera_ids: frozenset[str] | None = None
     disposition: Disposition | None = None
     created_since: datetime | None = None
     created_until: datetime | None = None
     older_than: AlertPosition | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AlertCount:
+    """How many alerts of one kind share a review state."""
+
+    kind: AlertKind
+    disposition: Disposition
+    is_acknowledged: bool
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class DailyAlertCount:
+    """How many alerts of one kind were raised on one UTC day."""
+
+    day: date
+    kind: AlertKind
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class AlertSummary:
+    """Totals of the alerts that match a filter."""
+
+    counts: list[AlertCount]
+    daily_counts: list[DailyAlertCount]
 
 
 def save_alert(alert: Alert) -> None:
@@ -123,6 +160,65 @@ def list_rule_alerts(owner_id: str, alert_filter: AlertFilter, limit: int) -> li
     return [_build_rule_alert(record) for record in records]
 
 
+def list_alerts(
+    owner_id: str, alert_filter: AlertFilter, limit: int, kind: AlertKind | None = None
+) -> list[Alert]:
+    """Returns up to ``limit`` of the owner's alerts of the given kind or both, newest first."""
+    alerts: list[Alert] = []
+    if kind in (None, AlertKind.IDENTITY_MATCH):
+        alerts.extend(list_identity_match_alerts(owner_id, alert_filter, limit))
+    if kind in (None, AlertKind.RULE):
+        alerts.extend(list_rule_alerts(owner_id, alert_filter, limit))
+    # Both tables are ordered the same way, so the newest of their pages form the merged page.
+    alerts.sort(key=lambda alert: (alert.created_at, alert.id), reverse=True)
+    return alerts[:limit]
+
+
+def summarize_alerts(owner_id: str, alert_filter: AlertFilter) -> AlertSummary:
+    """Returns totals of the owner's alerts by kind and review state, and by UTC day."""
+    counts: list[AlertCount] = []
+    daily_counts: list[DailyAlertCount] = []
+    for kind, record_type in RECORD_TYPE_BY_KIND.items():
+        conditions = _build_filter_conditions(record_type, owner_id, alert_filter)
+        # peewee's stubs type every row as a record, even rows read as tuples.
+        review_rows = cast(
+            "list[tuple[str, bool, int]]",
+            list(
+                record_type.select(
+                    record_type.disposition, record_type.is_acknowledged, fn.COUNT(record_type.id)
+                )
+                .where(*conditions)
+                .group_by(record_type.disposition, record_type.is_acknowledged)
+                .tuples()
+            ),
+        )
+        counts.extend(
+            AlertCount(
+                kind=kind,
+                disposition=Disposition(disposition),
+                is_acknowledged=bool(is_acknowledged),
+                count=count,
+            )
+            for disposition, is_acknowledged, count in review_rows
+        )
+        day_text = fn.SUBSTR(record_type.created_at, 1, DATE_TEXT_LENGTH)
+        day_rows = cast(
+            "list[tuple[str, int]]",
+            list(
+                record_type.select(day_text, fn.COUNT(record_type.id))
+                .where(*conditions)
+                .group_by(day_text)
+                .tuples()
+            ),
+        )
+        daily_counts.extend(
+            DailyAlertCount(day=date.fromisoformat(day), kind=kind, count=count)
+            for day, count in day_rows
+        )
+    daily_counts.sort(key=lambda daily_count: (daily_count.day, daily_count.kind))
+    return AlertSummary(counts=counts, daily_counts=daily_counts)
+
+
 def clear_snapshot_paths_under(day_directory: str) -> int:
     """Forgets the snapshots that were stored in a directory removed by evidence retention.
 
@@ -146,8 +242,8 @@ def _build_filter_conditions(
     record_type: AlertRecordType, owner_id: str, alert_filter: AlertFilter
 ) -> list[Expression]:
     conditions = [record_type.owner_id == owner_id]
-    if alert_filter.camera_id is not None:
-        conditions.append(record_type.camera_id == alert_filter.camera_id)
+    if alert_filter.camera_ids is not None:
+        conditions.append(record_type.camera_id.in_(sorted(alert_filter.camera_ids)))
     if alert_filter.disposition is not None:
         conditions.append(record_type.disposition == alert_filter.disposition.value)
     if alert_filter.created_since is not None:

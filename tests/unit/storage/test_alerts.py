@@ -1,21 +1,31 @@
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
 from specter.core.errors import NotFoundError
-from specter.entities.alerts import AlertReview, Disposition, IdentityMatchAlert, RuleAlert
+from specter.entities.alerts import (
+    AlertKind,
+    AlertReview,
+    Disposition,
+    IdentityMatchAlert,
+    RuleAlert,
+)
 from specter.entities.geometry import NormalizedBoundingBox
 from specter.entities.rules import CrossingDirection, RuleKind
 from specter.entities.targets import EmbeddingModality
 from specter.storage.alerts import (
+    AlertCount,
     AlertFilter,
     AlertPosition,
+    DailyAlertCount,
     clear_snapshot_paths_under,
     find_alert,
+    list_alerts,
     list_identity_match_alerts,
     save_alert,
     save_alert_review,
+    summarize_alerts,
 )
 
 pytestmark = pytest.mark.usefixtures("database")
@@ -128,10 +138,79 @@ def test_only_matching_camera_is_listed_when_filtering_by_camera() -> None:
     save_alert(build_identity_match_alert("alert_garage", camera_id="camera_garage"))
 
     garage_alerts = list_identity_match_alerts(
-        OWNER_ID, AlertFilter(camera_id="camera_garage"), limit=10
+        OWNER_ID, AlertFilter(camera_ids=frozenset({"camera_garage"})), limit=10
     )
 
     assert [alert.id for alert in garage_alerts] == ["alert_garage"]
+
+
+def build_rule_alert(alert_id: str, *, minutes_after_first: int = 0) -> RuleAlert:
+    created_at = FIRST_ALERT_AT + timedelta(minutes=minutes_after_first)
+    return RuleAlert(
+        id=alert_id,
+        owner_id=OWNER_ID,
+        camera_id="camera_front_door",
+        track_id=4,
+        rule_id="rule_entrance",
+        rule_kind=RuleKind.LINE_CROSSING,
+        zone_id=None,
+        object_class="car",
+        bounding_box=BOUNDING_BOX,
+        dwell_seconds=None,
+        crossing_direction=CrossingDirection.LEFT_TO_RIGHT,
+        frame_captured_at=created_at,
+        created_at=created_at,
+    )
+
+
+def test_alerts_of_both_kinds_are_merged_newest_first_when_paging_backwards() -> None:
+    for minute in (0, 2, 4):
+        save_alert(build_identity_match_alert(f"alert_match_{minute}", minutes_after_first=minute))
+    for minute in (1, 3):
+        save_alert(build_rule_alert(f"alert_rule_{minute}", minutes_after_first=minute))
+
+    first_page = list_alerts(OWNER_ID, AlertFilter(), limit=3)
+    last_alert = first_page[-1]
+    second_page = list_alerts(
+        OWNER_ID,
+        AlertFilter(
+            older_than=AlertPosition(created_at=last_alert.created_at, alert_id=last_alert.id)
+        ),
+        limit=3,
+    )
+    rule_page = list_alerts(OWNER_ID, AlertFilter(), limit=10, kind=AlertKind.RULE)
+
+    assert [alert.id for alert in first_page] == ["alert_match_4", "alert_rule_3", "alert_match_2"]
+    assert [alert.id for alert in second_page] == ["alert_rule_1", "alert_match_0"]
+    assert [alert.id for alert in rule_page] == ["alert_rule_3", "alert_rule_1"]
+
+
+def test_no_alert_is_listed_when_filtering_by_no_camera() -> None:
+    save_alert(build_identity_match_alert("alert_door"))
+
+    alerts = list_alerts(OWNER_ID, AlertFilter(camera_ids=frozenset()), limit=10)
+
+    assert alerts == []
+
+
+def test_summary_counts_alerts_by_kind_review_and_day() -> None:
+    save_alert(build_identity_match_alert("alert_match_today"))
+    save_alert(build_identity_match_alert("alert_match_tomorrow", minutes_after_first=24 * 60))
+    save_alert(build_rule_alert("alert_rule_today"))
+    save_alert_review("alert_match_today", AlertReview().acknowledge())
+
+    summary = summarize_alerts(OWNER_ID, AlertFilter())
+
+    assert sorted(summary.counts, key=lambda count: (count.kind, count.is_acknowledged)) == [
+        AlertCount(AlertKind.IDENTITY_MATCH, Disposition.UNREVIEWED, False, 1),
+        AlertCount(AlertKind.IDENTITY_MATCH, Disposition.UNREVIEWED, True, 1),
+        AlertCount(AlertKind.RULE, Disposition.UNREVIEWED, False, 1),
+    ]
+    assert summary.daily_counts == [
+        DailyAlertCount(date(2026, 9, 15), AlertKind.IDENTITY_MATCH, 1),
+        DailyAlertCount(date(2026, 9, 15), AlertKind.RULE, 1),
+        DailyAlertCount(date(2026, 9, 16), AlertKind.IDENTITY_MATCH, 1),
+    ]
 
 
 def test_snapshot_paths_are_cleared_only_under_removed_day_when_retention_runs() -> None:
