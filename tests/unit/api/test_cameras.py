@@ -43,6 +43,17 @@ def test_update_keeps_the_password_when_credentials_are_omitted(api_client: Test
     assert (cleared.json()["username"], cleared.json()["has_password"]) == (None, False)
 
 
+def test_update_replaces_metadata_and_keeps_other_fields(api_client: TestClient) -> None:
+    camera = create_camera(api_client)
+
+    response = api_client.patch(
+        f"{OWNER_PATH}/cameras/{camera['id']}", json={"metadata": {"location": "Gate"}}
+    )
+
+    assert response.json()["metadata"] == {"location": "Gate"}
+    assert response.json()["name"] == camera["name"]
+
+
 def test_camera_runs_only_between_start_and_stop(api_client: TestClient) -> None:
     camera = create_camera(api_client)
 

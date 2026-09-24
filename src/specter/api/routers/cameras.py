@@ -57,6 +57,7 @@ class CameraCreateBody(RequestModel):
     detection_classes: list[str] = Field(default_factory=list)
     sampling: SamplingBody = Field(default_factory=SamplingBody)
     is_enabled: bool = True
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class CameraUpdateBody(RequestModel):
@@ -72,6 +73,8 @@ class CameraUpdateBody(RequestModel):
     detection_classes: list[str] | None = None
     sampling: SamplingBody | None = None
     is_enabled: bool | None = None
+    # Replaces the whole metadata; changing only the metadata never restarts the camera.
+    metadata: dict[str, object] | None = None
 
 
 class CameraResponse(BaseModel):
@@ -88,6 +91,7 @@ class CameraResponse(BaseModel):
     sampling: SamplingBody
     is_enabled: bool
     desired_state: DesiredState
+    metadata: dict[str, object]
     # The camera process's latest report, or None when no process has reported lately.
     live_status: CameraStatus | None
 
@@ -108,6 +112,7 @@ async def create_camera(
         detection_classes=frozenset(body.detection_classes),
         sampling=build_sampling_settings(body.sampling),
         is_enabled=body.is_enabled,
+        metadata=body.metadata,
     )
     await store_camera(services, camera, ChangeKind.CREATED)
     return await build_camera_response(services, camera)
@@ -136,7 +141,7 @@ async def read_camera(
 async def update_camera(
     owner_id: str, camera_id: str, body: CameraUpdateBody, services: ServicesDependency
 ) -> CameraResponse:
-    """Changes the given fields of the camera; a running camera restarts with them."""
+    """Changes the given fields; a running camera restarts unless only its metadata changed."""
     camera = await get_owner_camera(services, owner_id, camera_id)
     changes = body.model_dump(exclude_unset=True)
     if body.watchlist_ids is not None:
@@ -159,6 +164,7 @@ async def update_camera(
         sampling=camera.sampling
         if body.sampling is None
         else build_sampling_settings(body.sampling),
+        metadata=camera.metadata if body.metadata is None else body.metadata,
     )
     if body.is_enabled is not None:
         updated_camera = updated_camera.enable() if body.is_enabled else updated_camera.disable()
@@ -243,6 +249,7 @@ async def build_camera_response(services: ApiServices, camera: Camera) -> Camera
         ),
         is_enabled=camera.is_enabled,
         desired_state=camera.desired_state,
+        metadata=dict(camera.metadata),
         live_status=await read_live_status(services, camera),
     )
 

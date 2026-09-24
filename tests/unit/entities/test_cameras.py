@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from specter.core.errors import InvalidEntityError
@@ -33,6 +35,12 @@ def test_camera_is_rejected_when_watchlist_ids_repeat() -> None:
             source_url="rtsp://camera",
             watchlist_ids=("watchlist_a", "watchlist_a"),
         )
+
+
+def test_cameras_are_equal_when_only_their_metadata_differs() -> None:
+    camera = build_camera()
+
+    assert replace(camera, metadata={"location": "Gate"}) == camera
 
 
 def test_start_returns_running_copy_when_camera_is_enabled() -> None:
