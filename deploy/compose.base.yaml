@@ -39,6 +39,10 @@ services:
       # Read-only, so go2rtc can never write camera URLs, which contain passwords, to disk.
       # Specter registers cameras in memory through the go2rtc API instead.
       - ./go2rtc/go2rtc.yaml:/config/go2rtc.yaml:ro
+    environment:
+      # The addresses viewers reach port 8555 at, such as 192.168.1.50:8555; stun:8555 lets
+      # go2rtc discover its public address instead.
+      GO2RTC_WEBRTC_CANDIDATES: ${GO2RTC_WEBRTC_CANDIDATES:-stun:8555}
     restart: unless-stopped
 
 volumes:
