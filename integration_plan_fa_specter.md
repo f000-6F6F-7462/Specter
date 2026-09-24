@@ -1,4 +1,140 @@
-# תכנון אינטגרציה מלאה: Face Alert ↔ Specter (v2 — מעודכן)
+# FaceAlert ↔ Specter: current architecture and verification status
+
+Updated 2026-09-25. This section supersedes the entire v2 design archived below.
+The archive is historical context only: its code samples, migrations, task lists,
+checkmarks and completion claims are not implementation instructions or test evidence.
+The older v1 plan is also superseded. Do not implement either legacy design.
+
+## Current architecture
+
+- **One owner:** fa-server uses one configured `SPECTER_OWNER_ID` (default `facealert`).
+  There is no organizations layer or per-user Specter owner resolver.
+- **Specter owns vision data:** cameras (including app fields in `metadata.fa`),
+  watchlists, targets/photos, enrollment and alerts. Camera IDs are the Specter IDs;
+  there is no `specter_camera_id` mapping or duplicate Supabase camera catalog.
+- **Supabase owns application identity/access:** users and camera assignments.
+  Authentication, role guards and camera access checks belong in fa-server.
+- **Typed ACL:** [server/src/specter](integrations/fa/server/src/specter) holds the
+  typed HTTP client, generated contracts, catalog, configuration and event stream.
+  All application HTTP routes are under `/api`; the browser never receives the
+  Specter service token. Socket.IO uses its separate `/socket.io/` transport path.
+- **Realtime is a live relay:** ordered ephemeral NATS consumers forward authorized
+  events to Socket.IO. No MongoDB alert copy, idempotent Mongo ingestion job or durable
+  fa alert backlog exists. Read historical/current state through Specter's HTTP API.
+  Camera status starts with the last event per subject; alert/enrollment/configuration
+  subscriptions follow new events. Clients must refetch after reconnect/downtime.
+- **Live video:** authenticated camera access issues a short-lived camera-bound,
+  one-use ticket for the MSE WebSocket upgrade; fa attaches its service token upstream.
+  JPEG fallback is fetched through the authenticated fa frame endpoint.
+  **HLS is NOT proxied by fa: MSE + JPEG is the explicit deviation from v2.**
+  Ticket replay tracking is process-local, not a distributed/restart-safe guarantee.
+
+Source inspection establishes this architecture, not end-to-end acceptance.
+See the [deployment guide](integrations/fa/docs/deploy/SPECTER_DEPLOY.md) for credential
+provisioning, network topology, reverse-proxy requirements and production limitations.
+
+## Active delivery scope
+
+The following scope is implemented in the working trees of the existing client/server
+submodules. Local tests use mocked transports; deployment and real-camera acceptance
+are deliberately tracked separately. No branches were switched and no commits were made.
+
+| Area | Required delivered behavior | Acceptance status |
+| --- | --- | --- |
+| Watchlists | Watchlist and target CRUD; photo upload/read/delete; asynchronous enrollment tracking | Implemented; local regression tests pass |
+| Alerts | Specter-backed list, cursor pagination, filters, snapshots, acknowledge and resolve | Implemented; local regression tests pass |
+| Cameras | Specter-backed CRUD, watchlist selection, start/stop and live status | Implemented; 202 acceptance is separate from observed status |
+| Live video | Secure MSE with fresh one-use tickets and authenticated JPEG fallback; no HLS claim | Implemented; simulated media/transport tests pass; real playback pending |
+| Realtime | Authenticated Socket.IO, authorized rooms, status/enrollment/alert updates and reconnect refetch | Implemented; connection, invalidation and cleanup tests pass |
+| Authorization | Server role guards and resource-level access, including negative tests and WS upgrades | Existing server suite and client role tests pass; deployed isolation checks pending |
+| Deployment/docs | External Specter network + retained fa default network, shared token file, credential injection and current documentation | Implemented; quiet Compose validation passes; not deployed |
+
+### Phase 5 implementation map
+
+- [Watchlists page](integrations/fa/client/src/pages/WatchlistsPage.tsx),
+  [queries/mutations](integrations/fa/client/src/hooks/use-watchlists.ts) and
+  [HTTP service](integrations/fa/client/src/services/watchlists.ts): named multipart
+  uploads, drag/drop, 20-photo/10-MiB limits, authenticated blob previews, confirmations,
+  per-modality rejection/quality and polling only while embeddings are pending.
+- [Alerts table](integrations/fa/client/src/components/alerts-table.tsx) and
+  [alert hooks](integrations/fa/client/src/hooks/use-alerts.ts): `/api/alerts`, opaque
+  cursors, camera/kind/disposition/time filters, metadata and authenticated snapshots.
+  Viewers may acknowledge; only admins/operators resolve with a verdict and optional note.
+- [Cameras page](integrations/fa/client/src/pages/CamerasPage.tsx): create/edit/delete,
+  separate credentials, watchlist assignment, asynchronous start/stop and live links.
+  Shared camera queries unwrap `data.data`, retain `live_status`/`desired_state` and poll
+  every 15 seconds in visible tabs as a fallback. A missing live status is unknown.
+- [Live page](integrations/fa/client/src/pages/LiveVideoPage.tsx) and
+  [MSE session](integrations/fa/client/src/components/live-player/mse-session.ts): codec
+  negotiation, bounded queues, buffer eviction, fresh tickets, retry and full cleanup.
+  JPEG mode is clearly labeled snapshots, not continuous video.
+- [Realtime synchronization](integrations/fa/client/src/components/RealtimeSync.tsx):
+  one authenticated Socket.IO connection, coalesced invalidation, camera status updates,
+  delayed alert refetch for persistence races and reconnect reconciliation. Authentication
+  changes clear the query cache. Alert chart data now comes from `/api/alerts/summary`.
+- [Routing](integrations/fa/client/src/App.tsx): `/watchlists` and `/cameras/:id/live`,
+  with role-aware desktop/mobile navigation. Server authorization remains authoritative.
+- [Test configuration](integrations/fa/client/vitest.config.ts): `npm test` runs the
+  persistent Vitest/DOM suite; `npm run test:watch` is available for development.
+
+## Deployment decisions
+
+- [fa-server Compose](integrations/fa/server/docker-compose.yml) joins external
+  `${SPECTER_NETWORK:-specter_default}` and its own default network. MongoDB and MinIO
+  stay on the default network for existing functionality, not Specter alert storage.
+- Specter's [base Compose](deploy/compose.base.yaml) uses project name `specter`;
+  [application Compose](deploy/compose.yaml) adds `api`, `camera-manager` and `detector`.
+  fa connects to `http://api:8000` and `SPECTER_NATS_URL=nats://nats:4222`.
+- Both API and fa mount the same [token file](deploy/secrets/api.token) at
+  `/run/secrets/specter_api_token`. The fa source path is
+  `../../../deploy/secrets/api.token`, relative to its Compose directory.
+- Supply `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`, `MINIO_ACCESS_KEY` and
+  `MINIO_SECRET_KEY` through protected deployment configuration, never hardcoded
+  credentials. Set production `ALLOWED_ORIGINS`; its localhost default is development-only.
+- Start Specter's separate project first; fa's dependencies do not establish
+  cross-project readiness. The server image does not include the frontend build.
+- Production TLS/ingress, private database ports, database authentication and
+  multi-instance live-ticket safety are not solved by this Compose wiring.
+
+## Verification matrix
+
+Do not change a pending row to passed based on implementation presence or legacy
+checkmarks. Record the command/scenario, actual outcome and environment when the main
+agent/operator supplies results. No secret or environment-file contents were read.
+
+| Check | Evidence / status |
+| --- | --- |
+| Compose service names and secret path | Inspected both Specter Compose files; `realpath -m` resolves fa's three-parent path to the root deployment token without reading it |
+| Quiet fa Compose validation | Passed 2026-09-25: `docker compose --env-file /dev/null -f integrations/fa/server/docker-compose.yml config --quiet` in a cleared environment with non-secret placeholders; no environment files loaded or resolved configuration printed |
+| Quiet combined Specter Compose validation | Passed 2026-09-25: `docker compose --env-file /dev/null -f deploy/compose.base.yaml -f deploy/compose.yaml config --quiet` in a cleared environment; no containers started |
+| Scoped tracked diff validation | Passed 2026-09-25: `git diff --check` in the owning repositories; new deployment document checked separately before handoff |
+| Editor diagnostics | No Compose errors; archived v2 retains pre-existing Markdown lint warnings and is not claimed lint-clean |
+| Client regression suite | Passed 2026-09-25: `npm test`, 220 tests in 17 files; mocked APIs, DOM and MediaSource/WebSocket |
+| Client production build | Passed: `npm run build` (TypeScript + Vite); large output chunk warning remains |
+| Client scoped lint | Passed for new feature files/tests, shared hooks, layout, routing and Vitest configuration |
+| Client full lint | `npm run lint`: 27 existing errors and four warnings in legacy files/shared primitives; AuthContext fast-refresh finding confirmed against HEAD; no new scoped lint errors |
+| Server types/tests | Passed: `npm run typecheck`; `npm test -- --run`, 47 passed and one skipped email-delivery test |
+| Dependency checks | Installation reports 18 audit findings (one low, six moderate, 11 high) in the dependency tree; broad dependency remediation is not part of this change. Existing Node 18/npm 10 engine declaration warns under local Node 24/npm 11 |
+| Runtime Docker networking/token access/Supabase access | Pending operator verification; config validation is not connectivity testing |
+| Watchlists/targets/photos/enrollment | Local contract, upload validation, polling and role tests pass; real detector enrollment pending |
+| Camera CRUD/watchlist selection/start/stop/status | Local form/service/status tests pass; real process lifecycle pending |
+| Alerts cursor/filters/snapshot/acknowledge/resolve | Local query, filter, confirmation, retry and role tests pass; deployed persistence pending |
+| Socket.IO rooms/reconnect/refetch | Client lifecycle and existing server relay tests pass; authenticated end-to-end delivery pending; no durable fa replay claim |
+| MSE/JPEG, ticket expiry/replay/camera binding | Simulated MSE/JPEG lifecycle tests and existing server relay tests pass; actual camera decoding pending; HLS intentionally unavailable |
+| Browser smoke checks | Passed with synthetic API fixtures at localhost:5173: camera/watchlist navigation, creation dialogs, viewer guards and 390px layout; fixtures/session removed, no backend mutations |
+| Role/resource isolation | Local client role guards and existing server camera-access tests pass; deployed API/WS isolation checks remain pending |
+| Production rollout/hardening | Pending; no containers started, no deployment claimed |
+
+---
+
+## Archived v2 — SUPERSEDED, DO NOT IMPLEMENT
+
+Everything below is retained only for history, including the original Hebrew text.
+Its organizations, duplicate camera mapping, MongoDB alert ingestion, durable consumer,
+HLS proxy and old route/env proposals conflict with the current architecture above.
+Any historical “complete”/checked status below is unverified and superseded.
+
+### Original v2 title (historical): תכנון אינטגרציה מלאה: Face Alert ↔ Specter
 
 ## מטרה
 אינטגרציה מלאה של **Face Alert (fa)** עם **Specter**, כך ש-fa יצרוך התראות, יעקוב אחרי מצלמות, ינהל watchlists/targets דרך ה-HTTP API של Specter, ויציג וידאו חי — הכול דרך Anti-Corruption Layer (ACL).
