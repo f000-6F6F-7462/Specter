@@ -90,9 +90,10 @@ which the Docker Compose file publishes on all interfaces. Consequences:
 
 - The viewer's network must be able to reach the device on 8555. Viewers outside the local network
   need that port forwarded or otherwise routed.
-- go2rtc is not configured with a fixed public address, so it advertises the device's own
-  addresses. If viewers reach the device through NAT or a different address, set go2rtc's
-  `webrtc.candidates` (in `deploy/go2rtc/go2rtc.yaml`) to the address they use. This is a
+- go2rtc advertises the addresses in `GO2RTC_WEBRTC_CANDIDATES` (default `stun:8555`, which
+  discovers the public address and needs internet access). Inside Docker the device's own
+  addresses are container addresses, so on a local network set it to the address viewers use,
+  such as `GO2RTC_WEBRTC_CANDIDATES=192.168.1.50:8555`, in the environment of `make up`. This is a
   deployment decision, not something the API can do for you.
 - Fall back to MSE or HLS when the WebRTC connection does not establish.
 

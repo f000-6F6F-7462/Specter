@@ -35,7 +35,8 @@ diagrams there explain every flow used below.
 |---|---|---|
 | HTTP API | `http://127.0.0.1:8000` | `Authorization: Bearer <token>` |
 | NATS + JetStream | `nats://127.0.0.1:4222` | none |
-| The token | `make api-token` (in Docker: `/etc/specter/api.token` in the `api` container); from source: `.dev/secrets/api.token` | created by Specter on first start |
+| The token | In Docker: `deploy/secrets/api.token` (`make api-token-file`); mount it read-only into your container. From source: `.dev/secrets/api.token` | `make api-token` prints it |
+| Contracts for code generation | [`contracts/openapi.json`](../../contracts/openapi.json), [`contracts/jsonschema/`](../../contracts/jsonschema/) | none |
 | Live WebRTC media (optional) | port `8555`, TCP and UDP, on the device | none |
 
 Everything listens on `127.0.0.1`, so **your application server must run on the same device**

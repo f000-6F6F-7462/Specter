@@ -68,12 +68,27 @@ starts a moment before it is ready stops and is started again.
 | Volume | Mounted at | Holds | Shared by |
 |---|---|---|---|
 | `specter-data` | `/var/lib/specter` | The SQLite database, alert snapshots, reference photos | every Specter container |
-| `specter-secrets` | `/etc/specter` | The API token and the key that encrypts camera passwords | `api`, `camera-manager` |
+| `specter-secrets` | `/etc/specter` | The key that encrypts camera passwords (and, from source, the API token) | `api`, `camera-manager` |
+| `deploy/secrets/api.token` (a file) | `/run/secrets/specter_api_token` | The API token, as a Compose secret. Mount the same file into the application server. | `api` |
 | `specter-frames` | `/dev/shm` | Video frames handed from camera processes to the detector (memory only) | `camera-manager`, `detector` |
 | `./models` (a folder) | `/opt/specter/models` | The AI models, from `make models` | `detector` |
 
 - **Back up `specter-data` and `specter-secrets` together.** Camera passwords in the database can
   only be decrypted with the key in `specter-secrets`. The database alone is not enough to restore.
+- **The API token file** is created by `make api-token-file` (run by `make up`) in a directory only
+  its owner can enter. The file itself is readable by every uid, because the API and the
+  application server run as different users. Without `make` (Windows), create it by hand:
+
+  ```powershell
+  New-Item -ItemType Directory -Force deploy/secrets | Out-Null
+  [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_') | Set-Content -NoNewline deploy/secrets/api.token
+  ```
+
+  Upgrading from a version that kept the token in `specter-secrets`: to keep the old token, copy it
+  first with `docker compose -f deploy/compose.base.yaml -f deploy/compose.yaml exec -T api cat /etc/specter/api.token > deploy/secrets/api.token`.
+- **WebRTC viewers** get the addresses in `GO2RTC_WEBRTC_CANDIDATES` (see
+  [Live video](integration/live-video.md#3-webrtc-post-webrtc)). Set it to the device's LAN address
+  and port 8555 for viewers on the local network.
 - The database is a **named volume on purpose**. SQLite's write-ahead log needs a real local
   filesystem, and a bind mount from a Mac or a network share can break its locking.
 - The models folder is **not read-only**: the detector downloads published models that are missing,
@@ -144,4 +159,5 @@ Migrations run automatically, first, through the `migrate` container. Data volum
 | Camera says `running` but nothing is ever detected | The detector and camera manager may not share `/dev/shm`. Compare `ls /dev/shm` in both (see above). |
 | `api` unhealthy | `curl -s http://127.0.0.1:8000/health`. `"is_nats_connected": false` means NATS is not reachable yet. |
 | Port already in use | Something else uses 8000, 4222, 6333, 1984, 8554 or 8555. Often `make run-all` is still running. |
-| The API token changed | It is created once in `specter-secrets`. A new value means that volume was recreated (and camera passwords are then unreadable). |
+| The API token changed | In Docker it is `deploy/secrets/api.token`, created once by `make api-token-file`. A new value means that file was deleted; restart the application server with the new one. |
+| `secret "specter_api_token" file … not found` | Run `make api-token-file` (or `make up`, which runs it). |
