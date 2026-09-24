@@ -3,6 +3,8 @@
 import shutil
 from pathlib import Path, PurePosixPath
 
+from specter.core.errors import NotFoundError
+
 REFERENCE_IMAGES_DIRECTORY_NAME = "reference_images"
 PARTIAL_FILE_SUFFIX = ".partial"
 FORBIDDEN_PATH_COMPONENTS = frozenset({"", ".", ".."})
@@ -41,6 +43,19 @@ class ReferenceImageStore:
         partial_file = image_file.with_name(image_file.name + PARTIAL_FILE_SUFFIX)
         partial_file.write_bytes(image_bytes)
         partial_file.replace(image_file)
+
+    def resolve_image_file(self, image_path: str) -> Path:
+        """Returns the absolute file of a stored reference image.
+
+        Raises:
+            NotFoundError: The path leaves the reference images directory, or the file is missing.
+        """
+        image_file = (self._data_directory / image_path).resolve()
+        if not image_file.is_relative_to(self._images_directory.resolve()):
+            raise NotFoundError(f"reference image {image_path} is outside its directory")
+        if not image_file.is_file():
+            raise NotFoundError(f"reference image {image_path} does not exist")
+        return image_file
 
     def delete_image(self, image_path: str) -> None:
         """Deletes one image file, if it exists."""
