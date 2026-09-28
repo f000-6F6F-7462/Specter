@@ -79,6 +79,25 @@ def test_batch_creates_targets_with_pending_embeddings_and_stored_images(
     assert all(image.read_bytes() == JPEG_BYTES for image in stored_images)
 
 
+def test_reference_image_is_served_only_through_its_own_target(api_client: TestClient) -> None:
+    watchlist = create_watchlist(api_client)
+    target = upload_targets(
+        api_client,
+        watchlist["id"],
+        [{"label": "Jane", "image_file_names": ["jane.jpg"]}],
+        [("images", ("jane.jpg", JPEG_BYTES, "image/jpeg"))],
+    ).json()[0]
+    image_id = target["reference_images"][0]["id"]
+    image_path = f"watchlists/{watchlist['id']}/targets/{target['id']}/images/{image_id}"
+
+    own_image = api_client.get(f"{OWNER_PATH}/{image_path}")
+    foreign_image = api_client.get(f"/owners/owner_bob/{image_path}")
+
+    assert (own_image.status_code, own_image.content) == (200, JPEG_BYTES)
+    assert own_image.headers["content-type"] == "image/jpeg"
+    assert foreign_image.status_code == 404
+
+
 def test_batch_is_rejected_when_a_named_file_was_not_uploaded(
     api_client: TestClient, api_settings: Settings
 ) -> None:

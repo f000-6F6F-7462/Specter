@@ -95,3 +95,31 @@ def test_invalid_cursor_is_rejected(api_client: TestClient) -> None:
     response = api_client.get(f"{ALERTS_PATH}/identity-matches", params={"cursor": "not-a-cursor"})
 
     assert response.status_code == 422
+
+
+def test_alerts_of_any_listed_camera_are_returned(
+    api_client: TestClient, stored_alert_ids: list[str]
+) -> None:
+    listed = api_client.get(
+        ALERTS_PATH, params=[("camera_id", "camera_front_door"), ("camera_id", "camera_garage")]
+    ).json()
+    other_camera = api_client.get(ALERTS_PATH, params={"camera_id": "camera_garage"}).json()
+
+    assert [alert["id"] for alert in listed["alerts"]] == list(reversed(stored_alert_ids))
+    assert other_camera["alerts"] == []
+
+
+def test_summary_counts_unacknowledged_alerts(
+    api_client: TestClient, stored_alert_ids: list[str]
+) -> None:
+    api_client.post(f"{ALERTS_PATH}/{stored_alert_ids[0]}/acknowledge")
+
+    summary = api_client.get(f"{ALERTS_PATH}/summary").json()
+
+    assert (summary["total_count"], summary["unacknowledged_count"]) == (
+        ALERT_COUNT,
+        ALERT_COUNT - 1,
+    )
+    assert summary["daily_counts"] == [
+        {"day": "2026-09-16", "kind": "identity_match", "count": ALERT_COUNT}
+    ]

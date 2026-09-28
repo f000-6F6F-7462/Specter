@@ -5,11 +5,11 @@ import base64
 import binascii
 import json
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime
 from functools import partial
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
 from pydantic import AwareDatetime, BaseModel
 
@@ -19,6 +19,7 @@ from specter.api.schemas import RequestModel
 from specter.core.errors import InvalidEntityError, NotFoundError
 from specter.entities.alerts import (
     Alert,
+    AlertKind,
     AlertReview,
     Disposition,
     IdentityMatchAlert,
@@ -29,9 +30,11 @@ from specter.entities.targets import EmbeddingModality
 from specter.storage.alerts import (
     AlertFilter,
     AlertPosition,
+    list_alerts,
     list_identity_match_alerts,
     list_rule_alerts,
     save_alert_review,
+    summarize_alerts,
 )
 
 router = APIRouter(prefix="/owners/{owner_id}/alerts", tags=["alerts"])
@@ -39,6 +42,12 @@ router = APIRouter(prefix="/owners/{owner_id}/alerts", tags=["alerts"])
 DEFAULT_PAGE_SIZE = 50
 MAXIMUM_PAGE_SIZE = 200
 SNAPSHOT_MEDIA_TYPE = "image/jpeg"
+
+# Repeating camera_id selects the alerts of any of those cameras.
+CameraIdsQuery = Annotated[list[str] | None, Query(alias="camera_id")]
+CreatedSinceQuery = Annotated[AwareDatetime | None, Query()]
+CreatedUntilQuery = Annotated[AwareDatetime | None, Query()]
+LimitQuery = Annotated[int, Query(ge=1, le=MAXIMUM_PAGE_SIZE)]
 
 
 class BoundingBoxResponse(BaseModel):
@@ -62,7 +71,7 @@ class AlertResponse(BaseModel):
     """An alert of either kind; fields of the other kind are null."""
 
     id: str
-    kind: Literal["identity_match", "rule"]
+    kind: AlertKind
     owner_id: str
     camera_id: str
     track_id: int
@@ -99,25 +108,118 @@ class ResolutionBody(RequestModel):
     note: str | None = None
 
 
-@router.get("/identity-matches")
-async def list_identity_matches(
-    owner_id: str,
-    services: ServicesDependency,
-    camera_id: Annotated[str | None, Query()] = None,
+class AlertCountResponse(BaseModel):
+    """How many alerts of one kind share a review state."""
+
+    kind: AlertKind
+    disposition: Disposition
+    is_acknowledged: bool
+    count: int
+
+
+class DailyAlertCountResponse(BaseModel):
+    """How many alerts of one kind were raised on one UTC day."""
+
+    day: date
+    kind: AlertKind
+    count: int
+
+
+class AlertSummaryResponse(BaseModel):
+    """Totals of the alerts that match a filter."""
+
+    total_count: int
+    unacknowledged_count: int
+    # Only the combinations that occur are listed.
+    counts: list[AlertCountResponse]
+    # Oldest first; days without alerts are left out.
+    daily_counts: list[DailyAlertCountResponse]
+
+
+def read_page_filter(
+    camera_id: CameraIdsQuery = None,
     disposition: Annotated[Disposition | None, Query()] = None,
-    created_since: Annotated[AwareDatetime | None, Query()] = None,
-    created_until: Annotated[AwareDatetime | None, Query()] = None,
+    created_since: CreatedSinceQuery = None,
+    created_until: CreatedUntilQuery = None,
     cursor: Annotated[str | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=MAXIMUM_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
-) -> AlertPageResponse:
-    """Lists the owner's identity match alerts, newest first."""
-    alert_filter = AlertFilter(
-        camera_id=camera_id,
+) -> AlertFilter:
+    """Returns the filter that a request for a page of alerts describes."""
+    return AlertFilter(
+        camera_ids=build_camera_ids(camera_id),
         disposition=disposition,
         created_since=created_since,
         created_until=created_until,
         older_than=decode_cursor(cursor),
     )
+
+
+PageFilterDependency = Annotated[AlertFilter, Depends(read_page_filter)]
+
+
+@router.get("")
+async def list_all_alerts(
+    owner_id: str,
+    services: ServicesDependency,
+    alert_filter: PageFilterDependency,
+    kind: Annotated[AlertKind | None, Query()] = None,
+    limit: LimitQuery = DEFAULT_PAGE_SIZE,
+) -> AlertPageResponse:
+    """Lists the owner's alerts of both kinds, or of one, newest first."""
+    alerts = await asyncio.get_running_loop().run_in_executor(
+        services.database_thread.executor,
+        partial(list_alerts, owner_id, alert_filter, limit, kind),
+    )
+    return build_page(alerts, limit)
+
+
+@router.get("/summary")
+async def summarize_owner_alerts(
+    owner_id: str,
+    services: ServicesDependency,
+    camera_id: CameraIdsQuery = None,
+    created_since: CreatedSinceQuery = None,
+    created_until: CreatedUntilQuery = None,
+) -> AlertSummaryResponse:
+    """Counts the owner's alerts by kind and review state, and by UTC day."""
+    alert_filter = AlertFilter(
+        camera_ids=build_camera_ids(camera_id),
+        created_since=created_since,
+        created_until=created_until,
+    )
+    summary = await asyncio.get_running_loop().run_in_executor(
+        services.database_thread.executor, partial(summarize_alerts, owner_id, alert_filter)
+    )
+    return AlertSummaryResponse(
+        total_count=sum(count.count for count in summary.counts),
+        unacknowledged_count=sum(
+            count.count for count in summary.counts if not count.is_acknowledged
+        ),
+        counts=[
+            AlertCountResponse(
+                kind=count.kind,
+                disposition=count.disposition,
+                is_acknowledged=count.is_acknowledged,
+                count=count.count,
+            )
+            for count in summary.counts
+        ],
+        daily_counts=[
+            DailyAlertCountResponse(
+                day=daily_count.day, kind=daily_count.kind, count=daily_count.count
+            )
+            for daily_count in summary.daily_counts
+        ],
+    )
+
+
+@router.get("/identity-matches")
+async def list_identity_matches(
+    owner_id: str,
+    services: ServicesDependency,
+    alert_filter: PageFilterDependency,
+    limit: LimitQuery = DEFAULT_PAGE_SIZE,
+) -> AlertPageResponse:
+    """Lists the owner's identity match alerts, newest first."""
     alerts = await asyncio.get_running_loop().run_in_executor(
         services.database_thread.executor,
         partial(list_identity_match_alerts, owner_id, alert_filter, limit),
@@ -129,21 +231,10 @@ async def list_identity_matches(
 async def list_rule_firings(
     owner_id: str,
     services: ServicesDependency,
-    camera_id: Annotated[str | None, Query()] = None,
-    disposition: Annotated[Disposition | None, Query()] = None,
-    created_since: Annotated[AwareDatetime | None, Query()] = None,
-    created_until: Annotated[AwareDatetime | None, Query()] = None,
-    cursor: Annotated[str | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=MAXIMUM_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+    alert_filter: PageFilterDependency,
+    limit: LimitQuery = DEFAULT_PAGE_SIZE,
 ) -> AlertPageResponse:
     """Lists the owner's rule alerts, newest first."""
-    alert_filter = AlertFilter(
-        camera_id=camera_id,
-        disposition=disposition,
-        created_since=created_since,
-        created_until=created_until,
-        older_than=decode_cursor(cursor),
-    )
     alerts = await asyncio.get_running_loop().run_in_executor(
         services.database_thread.executor,
         partial(list_rule_alerts, owner_id, alert_filter, limit),
@@ -224,7 +315,14 @@ def decode_cursor(cursor: str | None) -> AlertPosition | None:
         raise InvalidEntityError("the cursor is not valid") from error
 
 
-def build_page(alerts: list[IdentityMatchAlert] | list[RuleAlert], limit: int) -> AlertPageResponse:
+def build_camera_ids(camera_ids: list[str] | None) -> frozenset[str] | None:
+    """Returns the cameras a query names, or None when it names none and so means all."""
+    return None if camera_ids is None else frozenset(camera_ids)
+
+
+def build_page(
+    alerts: list[IdentityMatchAlert] | list[RuleAlert] | list[Alert], limit: int
+) -> AlertPageResponse:
     """Returns a page of alerts, with a cursor when the page is full."""
     return AlertPageResponse(
         alerts=[build_alert_response(alert) for alert in alerts],
@@ -258,7 +356,7 @@ def build_alert_response(alert: Alert) -> AlertResponse:
     match alert:
         case IdentityMatchAlert():
             return AlertResponse(
-                kind="identity_match",
+                kind=AlertKind.IDENTITY_MATCH,
                 watchlist_id=alert.watchlist_id,
                 target_id=alert.target_id,
                 modality=alert.modality,
@@ -268,7 +366,7 @@ def build_alert_response(alert: Alert) -> AlertResponse:
             )
         case RuleAlert():
             return AlertResponse(
-                kind="rule",
+                kind=AlertKind.RULE,
                 rule_id=alert.rule_id,
                 rule_kind=alert.rule_kind,
                 zone_id=alert.zone_id,

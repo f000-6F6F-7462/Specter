@@ -42,6 +42,7 @@ def build_camera(camera_id: str, watchlist_ids: tuple[str, ...] = ()) -> Camera:
         credentials=CameraCredentials(username="admin", password="camera-password"),
         watchlist_ids=watchlist_ids,
         detection_classes=frozenset({"person", "car"}),
+        metadata={"location": "lobby"},
     )
 
 
@@ -51,8 +52,11 @@ def test_camera_is_unchanged_when_saved_and_loaded(cipher: CredentialCipher) -> 
     camera = build_camera("camera_front_door", watchlist_ids=("watchlist_b", "watchlist_a"))
 
     save_camera(camera, cipher)
+    loaded_camera = find_camera("camera_front_door", cipher)
 
-    assert find_camera("camera_front_door", cipher) == camera
+    assert loaded_camera == camera
+    assert loaded_camera is not None
+    assert loaded_camera.metadata == {"location": "lobby"}
 
 
 def test_password_is_not_stored_in_plain_text_when_camera_is_saved(

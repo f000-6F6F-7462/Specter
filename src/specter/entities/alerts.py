@@ -19,6 +19,13 @@ class Disposition(StrEnum):
     FALSE_POSITIVE = "false_positive"
 
 
+class AlertKind(StrEnum):
+    """What raised an alert."""
+
+    IDENTITY_MATCH = "identity_match"
+    RULE = "rule"
+
+
 @dataclass(frozen=True, slots=True)
 class AlertReview:
     """How a person has reviewed an alert so far."""

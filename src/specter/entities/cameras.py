@@ -1,5 +1,6 @@
 """Cameras and how their frames are sampled."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from urllib.parse import urlsplit
@@ -78,6 +79,8 @@ class Camera:
     sampling: SamplingSettings = field(default_factory=SamplingSettings)
     is_enabled: bool = True
     desired_state: DesiredState = DesiredState.STOPPED
+    # Left out of equality so that changing only the metadata never restarts a running camera.
+    metadata: Mapping[str, object] = field(default_factory=dict, compare=False)
 
     def __post_init__(self) -> None:
         require_non_empty_text(self.name, "camera name")

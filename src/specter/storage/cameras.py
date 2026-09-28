@@ -122,6 +122,7 @@ def _build_record_values(camera: Camera, cipher: CredentialCipher | None) -> dic
         "is_motion_gating_enabled": camera.sampling.is_motion_gating_enabled,
         "is_enabled": camera.is_enabled,
         "desired_state": camera.desired_state.value,
+        "metadata_json": dump_json(dict(camera.metadata)),
     }
 
 
@@ -159,6 +160,7 @@ def _build_cameras(
             ),
             is_enabled=record.is_enabled,
             desired_state=DesiredState(record.desired_state),
+            metadata=load_json(record.metadata_json),
         )
         for record in records
     ]

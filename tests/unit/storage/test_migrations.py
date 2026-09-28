@@ -40,6 +40,7 @@ def test_nothing_is_applied_when_migrations_run_again(tmp_path: Path) -> None:
         "0002_matching_per_modality",
         "0003_image_embeddings",
         "0004_camera_transport",
+        "0005_camera_metadata",
     ]
     assert second_run_names == []
 

@@ -99,6 +99,9 @@ def _create_secret_file(secret_file: Path, generate_secret: Callable[[], str]) -
 
 
 def _synchronize_directory(directory: Path) -> None:
+    # Windows cannot open a directory as a file, and NTFS journals the link itself.
+    if os.name == "nt":
+        return
     directory_descriptor = os.open(directory, os.O_RDONLY)
     try:
         os.fsync(directory_descriptor)

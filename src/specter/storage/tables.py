@@ -34,6 +34,7 @@ class CameraRecord(Model):
     is_enabled = BooleanField()
     desired_state = CharField()
     created_at = CharField()
+    metadata_json = TextField(default="{}")
 
     class Meta:
         table_name = "cameras"

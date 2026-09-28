@@ -7,8 +7,9 @@ The API is how the application server *asks for or changes* something. What *hap
 - **Base URL:** `http://127.0.0.1:8000` (the port is `api.port` in the settings).
 - **Machine-readable spec:** `GET /openapi.json` (interactive: `/docs`, `/redoc`). It is generated
   from the code and needs no token, which is fine because the API listens on localhost only. **Use it
-  to generate your client types** rather than copying the shapes below by hand. The WebSocket
-  endpoint is the one thing it does not describe.
+  to generate your client types** rather than copying the shapes below by hand. The same document is
+  committed as [`contracts/openapi.json`](../../contracts/openapi.json), so types can be generated
+  without a running device. The WebSocket endpoint is the one thing it does not describe.
 - **Format:** JSON in and out, except where a section says otherwise. Field names are
   `snake_case`. Timestamps are RFC 3339.
 
@@ -21,8 +22,11 @@ Authorization: Bearer <token>
 ```
 
 The token is one long random string in a file (`security.api_token_file`, `/etc/specter/api.token`
-by default). `make api-token` prints it when Specter runs in Docker; when run from source it is
-`.dev/secrets/api.token`. Specter **creates it on first start** and only its owner can read it. Read it once at startup, from the application server's configuration;
+by default). In Docker it is `deploy/secrets/api.token` on the device, created by
+`make api-token-file` (`make up` runs it) and mounted into the `api` container as a Compose secret;
+mount the same file read-only into the application server. `make api-token` prints it. When run
+from source it is `.dev/secrets/api.token`, which Specter **creates on first start**, readable only
+by its owner. Read it once at startup, from the application server's configuration;
 never send it to a browser.
 
 The token identifies *your application*, not a user. Any request that carries it may act on **any
@@ -76,7 +80,7 @@ Paths are relative to the base URL. `{owner}` is `{owner_id}`.
 | `POST` | `/owners/{owner}/cameras` | Create a camera. It stays **stopped** until started. `201`. |
 | `GET` | `/owners/{owner}/cameras` | List the owner's cameras, oldest first. |
 | `GET` | `/owners/{owner}/cameras/{camera}` | One camera. |
-| `PATCH` | `/owners/{owner}/cameras/{camera}` | Change fields. A running camera **restarts** with the new settings. |
+| `PATCH` | `/owners/{owner}/cameras/{camera}` | Change fields. A running camera **restarts** with the new settings, unless only `metadata` changed. |
 | `DELETE` | `/owners/{owner}/cameras/{camera}` | Delete the camera with its zones and rules. Its alerts stay. `204`. |
 | `POST` | `/owners/{owner}/cameras/{camera}/start` | Ask the camera manager to run it. `422` if the camera is disabled. |
 | `POST` | `/owners/{owner}/cameras/{camera}/stop` | Ask the camera manager to stop it. |
@@ -91,7 +95,8 @@ Create body:
   "watchlist_ids": ["watchlist_…"],
   "detection_classes": ["person"],
   "sampling": { "mode": "adaptive", "target_fps": 10, "minimum_fps": 3, "is_motion_gating_enabled": true },
-  "is_enabled": true
+  "is_enabled": true,
+  "metadata": { "location": "Lobby" }
 }
 ```
 
@@ -105,6 +110,7 @@ Only `name` and `source_url` are required.
 | `detection_classes` | COCO class names such as `person`, `car`, `dog`. **Empty means every class.** |
 | `sampling.mode` | `adaptive` (slows down when the detector is busy, never below `minimum_fps`) or `fixed`. |
 | `is_enabled` | A disabled camera cannot be started. |
+| `metadata` | Free-form JSON object that Specter stores and returns untouched. `PATCH` replaces it whole, and never restarts the camera. |
 
 Response:
 
@@ -117,6 +123,7 @@ Response:
   "sampling": { "mode": "adaptive", "target_fps": 10, "minimum_fps": 3, "is_motion_gating_enabled": true },
   "is_enabled": true,
   "desired_state": "stopped",
+  "metadata": { "location": "Lobby" },
   "live_status": null
 }
 ```
@@ -209,6 +216,7 @@ A target is a person, vehicle or object to recognize, defined by one or more ref
 | `PATCH` | `/owners/{owner}/watchlists/{watchlist}/targets/{target}` | Change `label`, `metadata` or `is_enabled`. A disabled target stops matching at once. |
 | `DELETE` | `/owners/{owner}/watchlists/{watchlist}/targets/{target}` | Delete with its images and embeddings. Alerts stay. `204`. |
 | `POST` | `/owners/{owner}/watchlists/{watchlist}/targets/{target}/images` | Add photos to a target. `multipart/form-data`. `201`. |
+| `GET` | `/owners/{owner}/watchlists/{watchlist}/targets/{target}/images/{image}` | The uploaded photo, with its original content type. |
 | `DELETE` | `/owners/{owner}/watchlists/{watchlist}/targets/{target}/images/{image}` | Remove one photo. `204`. |
 | `GET` | `/owners/{owner}/enrollment-batches/{batch}` | The targets created together, to follow their enrollment. |
 
@@ -269,11 +277,13 @@ event. Rejection reasons are listed there.
 
 ### Alerts
 
-Alerts are created by Specter, never by the application. There are two kinds, listed separately:
+Alerts are created by Specter, never by the application. There are two kinds, stored separately:
 **identity matches** (a target was recognized) and **rule alerts** (a rule fired).
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/owners/{owner}/alerts` | One page of alerts of both kinds (or of one, with `kind`), newest first. |
+| `GET` | `/owners/{owner}/alerts/summary` | Totals by kind and review state, and per UTC day. |
 | `GET` | `/owners/{owner}/alerts/identity-matches` | One page of identity-match alerts, newest first. |
 | `GET` | `/owners/{owner}/alerts/rules` | One page of rule alerts, newest first. |
 | `GET` | `/owners/{owner}/alerts/{alert}` | One alert of either kind. |
@@ -285,7 +295,8 @@ Alerts are created by Specter, never by the application. There are two kinds, li
 
 | Parameter | Meaning |
 |---|---|
-| `camera_id` | Only this camera's alerts. |
+| `camera_id` | Only these cameras' alerts. Repeat it for several cameras: `?camera_id=camera_a&camera_id=camera_b`. |
+| `kind` | `identity_match` or `rule`. Only on `GET /alerts`. |
 | `disposition` | `unreviewed`, `true_positive` or `false_positive`. |
 | `created_since`, `created_until` | Time window. RFC 3339 **with a time zone**, for example `2026-09-20T00:00:00Z`. |
 | `limit` | 1 to 200, default 50. |
@@ -319,6 +330,18 @@ An alert (fields of the other kind are `null`):
 
 **Resolving** takes `{ "disposition": "true_positive" | "false_positive", "note": "optional text" }`
 and returns the updated alert. Only these two values are accepted.
+
+**The summary** takes `camera_id` (repeatable), `created_since` and `created_until`, and returns:
+
+```json
+{
+  "total_count": 12, "unacknowledged_count": 5,
+  "counts": [ { "kind": "identity_match", "disposition": "unreviewed", "is_acknowledged": false, "count": 5 } ],
+  "daily_counts": [ { "day": "2026-09-20", "kind": "identity_match", "count": 7 } ]
+}
+```
+
+`counts` and `daily_counts` list only the combinations that occur; `daily_counts` is oldest first.
 
 ### Live video
 

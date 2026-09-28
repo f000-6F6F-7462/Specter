@@ -9,6 +9,7 @@ from functools import partial
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, UploadFile, status
+from fastapi.responses import FileResponse
 from nats.errors import Error as NatsError
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
@@ -47,6 +48,9 @@ FILE_SUFFIXES_BY_CONTENT_TYPE = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
+}
+CONTENT_TYPES_BY_FILE_SUFFIX = {
+    file_suffix: content_type for content_type, file_suffix in FILE_SUFFIXES_BY_CONTENT_TYPE.items()
 }
 
 
@@ -290,6 +294,33 @@ async def add_images(
         ChangeKind.UPDATED,
     )
     return build_target_response(updated_target)
+
+
+@router.get(
+    "/watchlists/{watchlist_id}/targets/{target_id}/images/{image_id}",
+    response_class=FileResponse,
+    responses={
+        200: {"content": {content_type: {} for content_type in FILE_SUFFIXES_BY_CONTENT_TYPE}}
+    },
+)
+async def read_image(
+    owner_id: str,
+    watchlist_id: str,
+    target_id: str,
+    image_id: str,
+    services: ServicesDependency,
+) -> FileResponse:
+    """Returns the uploaded file of a reference image."""
+    target = await get_owner_target(services, owner_id, watchlist_id, target_id)
+    image = target.find_reference_image(image_id)
+    if image is None:
+        raise NotFoundError(f"reference image {image_id} does not exist")
+    image_file = await asyncio.to_thread(
+        services.reference_image_store.resolve_image_file, image.image_path
+    )
+    return FileResponse(
+        image_file, media_type=CONTENT_TYPES_BY_FILE_SUFFIX.get(image_file.suffix, "image/jpeg")
+    )
 
 
 @router.delete(

@@ -23,7 +23,8 @@ x-volumes: &volumes
   # One SQLite database, the alert snapshots and the reference images are shared by every process.
   # It is a named volume, not a bind mount: SQLite's write-ahead log needs a real local filesystem.
   - specter-data:/var/lib/specter
-  # The API token and the key that encrypts camera passwords. Created on first start.
+  # The API token and the key that encrypts camera passwords. Created on first start. In Docker the
+  # API reads its token from the specter_api_token secret instead.
   - specter-secrets:/etc/specter
   # Filled by `make models`. Not read-only: the detector downloads published models that are
   # missing and works in a temporary directory here. On Linux the directory must be writable by
@@ -60,7 +61,10 @@ services:
       <<: *environment
       # Inside the container the API must listen on every interface for the published port.
       SPECTER_API__HOST: 0.0.0.0
+      SPECTER_SECURITY__API_TOKEN_FILE: /run/secrets/specter_api_token
     volumes: *volumes
+    # The same file is mounted into the application server, which never sees specter-secrets.
+    secrets: [specter_api_token]
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -125,3 +129,8 @@ volumes:
       # Writable by the container's user; the sticky bit keeps processes from removing each
       # other's regions, as in a normal /dev/shm.
       o: size=1g,mode=1777
+
+# Created by `make api-token-file` before the first start; Compose refuses to start without it.
+secrets:
+  specter_api_token:
+    file: ./secrets/api.token

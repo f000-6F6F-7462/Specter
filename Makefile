@@ -9,7 +9,7 @@ SPECTER := uv run specter --config $(DEVELOPMENT_CONFIG)
 
 .PHONY: help setup install lock upgrade-dependencies format lint type-check test \
 	test-integration test-hardware test-models check ci contracts services-up services-down models migrate \
-	up down logs status api-token run-all run-api run-camera-manager run-camera run-detector clean clean-development-data require-uv
+	up down logs status api-token api-token-file run-all run-api run-camera-manager run-camera run-detector clean clean-development-data require-uv
 
 ##@ Setup
 
@@ -57,8 +57,9 @@ ci: require-uv  ## Install exactly from uv.lock, then run all checks
 	uv sync --locked
 	$(MAKE) check
 
-contracts: require-uv  ## Regenerate the message JSON Schemas in contracts/jsonschema
+contracts: require-uv  ## Regenerate the NATS JSON Schemas and the HTTP OpenAPI document in contracts/
 	uv run python -m specter.messaging.schemas contracts/jsonschema
+	uv run python -m specter.api.openapi contracts/openapi.json
 
 ##@ Run
 
@@ -106,7 +107,7 @@ run-detector: require-uv migrate  ## Run the detector with the development setti
 # The alternative to the run-* targets: every process runs in a container, restarts when it
 # crashes, and needs no Python on the machine. Do not run it together with run-all or run-api,
 # which use the same ports. Models must exist (make models).
-up:  ## Build and start everything in Docker: services, API, camera manager, detector
+up: deploy/secrets/api.token  ## Build and start everything in Docker: services, API, camera manager, detector
 	$(COMPOSE_STACK) up -d --build
 
 down:  ## Stop everything that make up started (data is kept)
@@ -119,7 +120,17 @@ status:  ## Show the state of every container
 	$(COMPOSE_STACK) ps
 
 api-token:  ## Print the API token of the containerized API
-	@$(COMPOSE_STACK) exec -T api cat /etc/specter/api.token
+	@cat deploy/secrets/api.token
+
+api-token-file: deploy/secrets/api.token  ## Create the API token shared by the API and the application server
+
+# The directory keeps other users of the device out; the file itself is readable by any uid,
+# because the API (uid 10001) and the application server run as different users.
+deploy/secrets/api.token:
+	@mkdir -p deploy/secrets && chmod 700 deploy/secrets
+	@head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' > $@.partial
+	@chmod 444 $@.partial && mv $@.partial $@
+	@echo "created $@"
 
 ##@ Maintenance
 

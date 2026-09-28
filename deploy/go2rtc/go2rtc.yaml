@@ -8,6 +8,9 @@ rtsp:
 # published beyond the device; the API handles the negotiation and keeps go2rtc's API private.
 webrtc:
   listen: ":8555"
+  # Set GO2RTC_WEBRTC_CANDIDATES in the environment (see compose.base.yaml).
+  candidates:
+    - ${GO2RTC_WEBRTC_CANDIDATES}
 
 # Filled at runtime through the go2rtc API as cameras are added.
 streams: {}

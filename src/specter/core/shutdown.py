@@ -1,6 +1,7 @@
 """Turns operating-system stop signals into a shutdown request that processes can watch."""
 
 import asyncio
+import contextlib
 import signal
 from collections.abc import Awaitable, Callable
 
@@ -14,7 +15,14 @@ def install_shutdown_signal_handlers(shutdown_requested: asyncio.Event) -> None:
     """
     event_loop = asyncio.get_running_loop()
     for shutdown_signal in SHUTDOWN_SIGNALS:
-        event_loop.add_signal_handler(shutdown_signal, shutdown_requested.set)
+        try:
+            event_loop.add_signal_handler(shutdown_signal, shutdown_requested.set)
+        except NotImplementedError:
+            with contextlib.suppress(ValueError, OSError):
+                signal.signal(
+                    shutdown_signal,
+                    lambda _sig, _frame: event_loop.call_soon_threadsafe(shutdown_requested.set),
+                )
 
 
 async def complete_unless_shutdown(
