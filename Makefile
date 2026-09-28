@@ -1,30 +1,18 @@
 .DEFAULT_GOAL := help
 
-COMPOSE := docker compose -f deploy/compose.base.yaml
-# The services plus Specter's own processes, all in Docker.
-COMPOSE_STACK := docker compose -f deploy/compose.base.yaml -f deploy/compose.yaml
-# The development settings keep data, secrets and models inside the repository.
-DEVELOPMENT_CONFIG := config/specter.dev.yaml
-SPECTER := uv run specter --config $(DEVELOPMENT_CONFIG)
+# Every Specter process runs in Docker. Running them from source is still possible with the
+# `specter` CLI directly; see README.md. It has no make targets, to keep this file to the
+# commands that are actually used.
+COMPOSE := docker compose -f deploy/compose.base.yaml -f deploy/compose.yaml
 
-.PHONY: help setup install lock upgrade-dependencies format lint type-check test \
-	test-integration test-hardware test-models check ci contracts services-up services-down models migrate \
-	up down logs status api-token api-token-file run-all run-api run-camera-manager run-camera run-detector clean clean-development-data require-uv
+.PHONY: help setup format lint test check contracts \
+	models up down logs status api-token api-token-file clean clean-dev require-uv
 
 ##@ Setup
 
-setup: install  ## Prepare a fresh clone: dependencies and git hooks
+setup: require-uv  ## Prepare a fresh clone: dependencies and git hooks
+	uv sync
 	uv run pre-commit install
-
-install: require-uv  ## Create the environment and install dependencies
-	uv sync
-
-lock: require-uv  ## Regenerate uv.lock from pyproject.toml
-	uv lock
-
-upgrade-dependencies: require-uv  ## Upgrade all dependencies within their allowed ranges
-	uv lock --upgrade
-	uv sync
 
 ##@ Quality
 
@@ -32,42 +20,21 @@ format: require-uv  ## Format code and apply safe lint fixes
 	uv run ruff format .
 	uv run ruff check --fix .
 
-lint: require-uv  ## Check formatting and lint rules
+lint: require-uv  ## Check formatting, lint rules and types
 	uv run ruff format --check .
 	uv run ruff check .
-
-type-check: require-uv  ## Run mypy in strict mode
 	uv run mypy
 
 test: require-uv  ## Run unit tests
 	uv run pytest
 
-test-integration: require-uv  ## Run tests against real services (nats-server, Qdrant, FFmpeg)
-	uv run pytest -m integration
-
-test-hardware: require-uv  ## Run tests that need an accelerator (CUDA, TensorRT)
-	uv run pytest -m hardware
-
-test-models: require-uv  ## Run tests on the real models (needs make models)
-	uv run pytest -m models
-
-check: lint type-check test  ## Lint, type-check and unit tests
-
-ci: require-uv  ## Install exactly from uv.lock, then run all checks
-	uv sync --locked
-	$(MAKE) check
+check: lint test  ## Every static check, then the unit tests
 
 contracts: require-uv  ## Regenerate the NATS JSON Schemas and the HTTP OpenAPI document in contracts/
 	uv run python -m specter.messaging.schemas contracts/jsonschema
 	uv run python -m specter.api.openapi contracts/openapi.json
 
 ##@ Run
-
-services-up:  ## Start NATS, Qdrant and go2rtc in Docker
-	$(COMPOSE) up -d
-
-services-down:  ## Stop NATS, Qdrant and go2rtc
-	$(COMPOSE) down
 
 models:  ## Export and download every model into ./models (Docker; torch stays in the container)
 	docker build --tag specter-model-export deploy/models
@@ -76,53 +43,25 @@ models:  ## Export and download every model into ./models (Docker; torch stays i
 		--volume "$(CURDIR)/src/specter/inference/model_manifest.yaml:/manifest.yaml:ro" \
 		specter-model-export
 
-migrate: require-uv  ## Apply pending database migrations to the development database
-	$(SPECTER) migrate
-
-# One shell runs the three long-lived processes, so Ctrl+C reaches all of them and each stops
-# cleanly. Camera processes are not listed: the camera manager starts them. A process that dies is
-# not restarted; run it again with its own run-* target.
-run-all: require-uv services-up migrate  ## Start the services, then the API, camera manager and detector; Ctrl+C stops them
-	@trap 'kill $$(jobs -p) 2>/dev/null; wait' INT TERM; \
-	$(SPECTER) api & \
-	$(SPECTER) camera-manager & \
-	$(SPECTER) detector & \
-	wait
-
-run-api: require-uv migrate  ## Run the local HTTP API with the development settings
-	$(SPECTER) api
-
-run-camera-manager: require-uv migrate  ## Run the camera manager with the development settings
-	$(SPECTER) camera-manager
-
-run-camera: require-uv  ## Run one camera process: make run-camera CAMERA_ID=<id>
-	$(if $(CAMERA_ID),,$(error CAMERA_ID is required: make run-camera CAMERA_ID=front_door))
-	$(SPECTER) camera --camera-id $(CAMERA_ID)
-
-run-detector: require-uv migrate  ## Run the detector with the development settings
-	$(SPECTER) detector
-
-##@ Docker
-
-# The alternative to the run-* targets: every process runs in a container, restarts when it
-# crashes, and needs no Python on the machine. Do not run it together with run-all or run-api,
-# which use the same ports. Models must exist (make models).
+# Every process runs in a container, restarts when it crashes, and needs no Python on the machine.
+# Models must exist (make models).
 up: deploy/secrets/api.token  ## Build and start everything in Docker: services, API, camera manager, detector
-	$(COMPOSE_STACK) up -d --build
+	$(COMPOSE) up -d --build
 
 down:  ## Stop everything that make up started (data is kept)
-	$(COMPOSE_STACK) down
+	$(COMPOSE) down
 
 logs:  ## Follow the logs of every container
-	$(COMPOSE_STACK) logs --follow --tail 100
+	$(COMPOSE) logs --follow --tail 100
 
 status:  ## Show the state of every container
-	$(COMPOSE_STACK) ps
+	$(COMPOSE) ps
 
-api-token:  ## Print the API token of the containerized API
-	@cat deploy/secrets/api.token
+api-token: deploy/secrets/api.token  ## Print the API token, creating it on first use
+	@cat $<
 
-api-token-file: deploy/secrets/api.token  ## Create the API token shared by the API and the application server
+# Provisions the token without printing it, for rollouts that keep secrets out of logs.
+api-token-file: deploy/secrets/api.token  ## Create the API token without revealing it
 
 # The directory keeps other users of the device out; the file itself is readable by any uid,
 # because the API (uid 10001) and the application server run as different users.
@@ -134,10 +73,14 @@ deploy/secrets/api.token:
 
 ##@ Maintenance
 
-clean:  ## Remove tool caches
+clean:  ## Remove the tool caches (pytest, mypy, ruff)
 	rm -rf .pytest_cache .mypy_cache .ruff_cache
 
-clean-development-data:  ## Delete the development database, evidence, images and secrets
+# Removes the Docker volumes as well as .dev, because the database lives in a volume whenever
+# Specter ran through `make up`. The API token file is kept, so clients stay configured; the
+# credentials key inside the volume is not, which is harmless once the database is gone too.
+clean-dev:  ## Delete all development data: database, vectors, evidence and NATS state
+	$(COMPOSE) down --volumes
 	rm -rf .dev
 
 help:  ## Show this help

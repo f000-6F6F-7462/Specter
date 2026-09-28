@@ -64,7 +64,7 @@ async def main() -> None:
 
     await connection.subscribe(subject, cb=on_message)
     print(f"listening on {subject} — Ctrl+C to stop", flush=True)
-    while True:  # noqa: ASYNC110
+    while True:
         await asyncio.sleep(1)
 
 

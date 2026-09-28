@@ -51,10 +51,20 @@ restarts any of them if it crashes. Then:
 How the containers fit together, hardware profiles and troubleshooting are in
 [Deployment](docs/deployment.md).
 
-**Working on the code?** Run the processes from source instead: `make setup` once, then
-`make run-all` (`Ctrl+C` stops them; the token is in `.dev/secrets/api.token`). Or one per terminal:
-`make services-up`, `make run-api`, `make run-camera-manager`, `make run-detector`. Do not run this
-and `make up` together, because they use the same ports. `make help` lists every target.
+**Working on the code?** `make setup` once, then `make check` before pushing. `make help` lists
+every target.
+
+To run a process from source instead of in its container, use the `specter` CLI with the
+development settings — one process per terminal, after starting the services it needs:
+
+```bash
+docker compose -f deploy/compose.base.yaml up -d        # NATS, Qdrant and go2rtc only
+uv run specter --config config/specter.dev.yaml migrate
+uv run specter --config config/specter.dev.yaml api     # then camera-manager, then detector
+```
+
+The token is then in `.dev/secrets/api.token`. Do not run this and `make up` together, because
+they use the same ports.
 
 ## Processes
 
@@ -87,7 +97,8 @@ and `make up` together, because they use the same ports. `make help` lists every
 ## Development
 
 ```bash
-make check              # lint, type-check and unit tests
-make test-integration   # against real NATS, Qdrant and FFmpeg
-make contracts          # regenerate contracts/jsonschema after changing a message
+make check                      # lint, type-check and unit tests
+make contracts                  # regenerate contracts/ after changing a message or an endpoint
+uv run pytest -m integration    # against real NATS, Qdrant and FFmpeg
+uv run pytest -m models         # against the real models (needs make models)
 ```
