@@ -149,15 +149,22 @@ cd "$REPO" && make up
 <details>
 <summary>Running from source instead of Docker</summary>
 
-`make run-all` runs the processes on the host. Do not run it together with `make up`; they use the
-same ports. The only difference that matters below is the token, which then lives at
-`.dev/secrets/api.token`:
+The `specter` CLI runs each process on the host. Do not run it together with `make up`; they use
+the same ports.
+
+```bash
+docker compose -f deploy/compose.base.yaml up -d        # NATS, Qdrant and go2rtc only
+uv run specter --config config/specter.dev.yaml migrate
+uv run specter --config config/specter.dev.yaml api     # then camera-manager, then detector
+```
+
+The only difference that matters below is the token, which then lives at `.dev/secrets/api.token`:
 
 ```bash
 export AUTH="Authorization: Bearer $(cat .dev/secrets/api.token)"
 ```
 
-With `make run-all`, go2rtc still runs in Docker, so Gate 1b still applies.
+go2rtc still runs in Docker this way, so Gate 1b still applies.
 </details>
 
 ### 3.3 Authentication (terminal 3)
@@ -449,7 +456,7 @@ curl -s -X PATCH "$BASE/owners/$OWNER/watchlists/$WATCHLIST" -H "$AUTH" \
 | Symptom | Cause |
 |---|---|
 | `jq` prints `null` | Empty token: `make` ran outside the repo, or `$AUTH` is stale after `down -v` |
-| `401` | Same. With `make up` the token is `make api-token`; with `make run-all` it is `.dev/secrets/api.token` |
+| `401` | Same. With `make up` the token is `make api-token`; run from source it is `.dev/secrets/api.token` |
 | `404` on `/alerts` | Use `/alerts/identity-matches`. `/alerts` exists only on the merged-alerts branch |
 | `live_status` `reconnecting` / `failed` | go2rtc cannot reach the source. Rerun Gate 1b and fix `SOURCE` |
 | Stream 404 in mediamtx | ffmpeg exited — usually the camera is held by another application |
@@ -458,7 +465,7 @@ curl -s -X PATCH "$BASE/owners/$OWNER/watchlists/$WATCHLIST" -H "$AUTH" \
 | `enrollment_status: failed` | Read `rejection_reason`; the photo has no usable face |
 | One alert then silence | Correct behaviour. Same track, 20 embeddings spent. Needs a new track |
 | Times look hours off | Containers are UTC, your machine is not |
-| Ports already in use | `make up` and `make run-all` together, or another service on 8000/4222/6333/1984/8554/18554 |
+| Ports already in use | `make up` and a from-source run together, or another service on 8000/4222/6333/1984/8554/18554 |
 | Detector container exits | A model file is missing — rerun `make models` and check `ls models` |
 
 ---

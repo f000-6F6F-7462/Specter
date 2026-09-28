@@ -14,9 +14,9 @@ make down       # stop everything; data is kept
 
 `make up` uses two Compose files together: [`deploy/compose.base.yaml`](../deploy/compose.base.yaml)
 (NATS, Qdrant, go2rtc) and [`deploy/compose.yaml`](../deploy/compose.yaml) (Specter). To work on
-Specter's code without rebuilding an image, run the processes from source instead (`make run-all`,
-see the [README](../README.md#run-it-locally)). Use one way or the other, not both at once: they use
-the same ports.
+Specter's code without rebuilding an image, run the processes from source instead with the
+`specter` CLI (see the [README](../README.md#run-it-locally)). Use one way or the other, not both at
+once: they use the same ports.
 
 ## Containers
 
@@ -158,6 +158,6 @@ Migrations run automatically, first, through the `migrate` container. Data volum
 | `detector` keeps restarting | `make logs`. `model file … is missing or damaged`: run `make models` for this profile. `Read-only file system` or `Permission denied` under `/opt/specter/models`: the folder must be writable (see above). |
 | Camera says `running` but nothing is ever detected | The detector and camera manager may not share `/dev/shm`. Compare `ls /dev/shm` in both (see above). |
 | `api` unhealthy | `curl -s http://127.0.0.1:8000/health`. `"is_nats_connected": false` means NATS is not reachable yet. |
-| Port already in use | Something else uses 8000, 4222, 6333, 1984, 8554 or 8555. Often `make run-all` is still running. |
+| Port already in use | Something else uses 8000, 4222, 6333, 1984, 8554 or 8555. Often a process started from source is still running. |
 | The API token changed | In Docker it is `deploy/secrets/api.token`, created once by `make api-token-file`. A new value means that file was deleted; restart the application server with the new one. |
 | `secret "specter_api_token" file … not found` | Run `make api-token-file` (or `make up`, which runs it). |
