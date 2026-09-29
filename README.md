@@ -93,6 +93,7 @@ they use the same ports.
 | `deploy/` | Dockerfile, Docker Compose (Specter, NATS, Qdrant, go2rtc), and the model export |
 | `config/` | Example and development settings |
 | `tests/` | `unit`, `integration` (real services), `models` (real models) |
+| `dashboard/` | Web UI and application server ([specter-dashboard](https://github.com/r-el/specter-dashboard)) |
 
 ## Development
 
