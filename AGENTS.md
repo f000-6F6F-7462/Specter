@@ -4,7 +4,7 @@ Always loaded: keep it short and current.
 
 ## Workspace
 - **Specter** (repo root, Python 3.12+, uv): headless edge vision engine. Reads RTSP cameras, detects, tracks and identifies people and objects (face, appearance re-id, zone/line rules), raises alerts with a JPEG snapshot. No UI and no users: an app server drives it over the HTTP API (FastAPI, `127.0.0.1:8000`, one Bearer token) and consumes NATS JetStream events (`:4222`). Docker services: NATS, Qdrant `:6333`, go2rtc `:1984`/`:8554`/`:8555`.
-- **FaceAlert "fa"** (`integrations/fa/`): the app server and web UI. A git submodule whose `server/` (fa-server) and `client/` (fa-client) are nested submodules with their own repos and branches: commit inside them, not in Specter.
+- **FaceAlert "fa"** (`dashboard/`): the app server and web UI. A git submodule whose `server/` (fa-server) and `client/` (fa-client) are nested submodules with their own repos and branches: commit inside them, not in Specter.
 - **Active work**: connecting fa to Specter through an anti-corruption layer in fa-server. Plan: `integration_plan_fa_specter.md` (current architecture and verification status; grep `^## Phase` and read one phase).
 
 ## Specter code map (`src/specter/`)
