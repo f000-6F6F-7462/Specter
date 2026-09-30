@@ -19,3 +19,18 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+      # .env.example is committed and documents names and defaults only; the values live in .env.
+      # Its active lines are the required settings and must stay empty, and so must every
+      # secret-like name, commented out or not.
+      - id: env-example-has-no-values
+        name: .env.example holds no values
+        language: pygrep
+        entry: '^(?:[A-Z][A-Z0-9_]*=\S|#\s*[A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)[A-Z0-9_]*=\S)'
+        files: ^\.env\.example$
+      # .env and deploy/secrets/ are ignored by git; this also stops them when added with -f.
+      - id: no-secret-files
+        name: no .env or secret files
+        language: fail
+        entry: holds secrets and must not be committed (only .env.example is)
+        files: ^(?:.*/)?\.env(?:\.[^/]+)?$|^deploy/secrets/
+        exclude: \.env\.example$

@@ -14,7 +14,7 @@ The older v1 plan is also superseded. Do not implement either legacy design.
   there is no `specter_camera_id` mapping or duplicate Supabase camera catalog.
 - **Supabase owns application identity/access:** users and camera assignments.
   Authentication, role guards and camera access checks belong in fa-server.
-- **Typed ACL:** [server/src/specter](integrations/fa/server/src/specter) holds the
+- **Typed ACL:** [server/src/specter](../../dashboard/server/src/specter) holds the
   typed HTTP client, generated contracts, catalog, configuration and event stream.
   All application HTTP routes are under `/api`; the browser never receives the
   Specter service token. Socket.IO uses its separate `/socket.io/` transport path.
@@ -30,7 +30,7 @@ The older v1 plan is also superseded. Do not implement either legacy design.
   Ticket replay tracking is process-local, not a distributed/restart-safe guarantee.
 
 Source inspection establishes this architecture, not end-to-end acceptance.
-See the [deployment guide](integrations/fa/docs/deploy/SPECTER_DEPLOY.md) for credential
+See the [deployment guide](../../dashboard/docs/deploy/SPECTER_DEPLOY.md) for credential
 provisioning, network topology, reverse-proxy requirements and production limitations.
 
 ## Active delivery scope
@@ -51,41 +51,41 @@ are deliberately tracked separately. No branches were switched and no commits we
 
 ### Phase 5 implementation map
 
-- [Watchlists page](integrations/fa/client/src/pages/WatchlistsPage.tsx),
-  [queries/mutations](integrations/fa/client/src/hooks/use-watchlists.ts) and
-  [HTTP service](integrations/fa/client/src/services/watchlists.ts): named multipart
+- [Watchlists page](../../dashboard/client/src/features/watchlists/WatchlistsPage.tsx),
+  [queries/mutations](../../dashboard/client/src/features/watchlists/hooks/use-watchlists.ts) and
+  [HTTP service](../../dashboard/client/src/features/watchlists/api/watchlists.ts): named multipart
   uploads, drag/drop, 20-photo/10-MiB limits, authenticated blob previews, confirmations,
   per-modality rejection/quality and polling only while embeddings are pending.
-- [Alerts table](integrations/fa/client/src/components/alerts-table.tsx) and
-  [alert hooks](integrations/fa/client/src/hooks/use-alerts.ts): `/api/alerts`, opaque
+- [Alerts table](../../dashboard/client/src/features/alerts/components/AlertsTable.tsx) and
+  [alert hooks](../../dashboard/client/src/features/alerts/hooks/use-alerts.ts): `/api/alerts`, opaque
   cursors, camera/kind/disposition/time filters, metadata and authenticated snapshots.
   Viewers may acknowledge; only admins/operators resolve with a verdict and optional note.
-- [Cameras page](integrations/fa/client/src/pages/CamerasPage.tsx): create/edit/delete,
+- [Cameras page](../../dashboard/client/src/pages/CamerasPage.tsx): create/edit/delete,
   separate credentials, watchlist assignment, asynchronous start/stop and live links.
   Shared camera queries unwrap `data.data`, retain `live_status`/`desired_state` and poll
   every 15 seconds in visible tabs as a fallback. A missing live status is unknown.
-- [Live page](integrations/fa/client/src/pages/LiveVideoPage.tsx) and
-  [MSE session](integrations/fa/client/src/components/live-player/mse-session.ts): codec
+- [Live page](../../dashboard/client/src/features/live/LiveVideoPage.tsx) and
+  [MSE session](../../dashboard/client/src/features/live/lib/mse-session.ts): codec
   negotiation, bounded queues, buffer eviction, fresh tickets, retry and full cleanup.
   JPEG mode is clearly labeled snapshots, not continuous video.
-- [Realtime synchronization](integrations/fa/client/src/components/RealtimeSync.tsx):
+- [Realtime synchronization](../../dashboard/client/src/features/realtime/RealtimeSync.tsx):
   one authenticated Socket.IO connection, coalesced invalidation, camera status updates,
   delayed alert refetch for persistence races and reconnect reconciliation. Authentication
   changes clear the query cache. Alert chart data now comes from `/api/alerts/summary`.
-- [Routing](integrations/fa/client/src/App.tsx): `/watchlists` and `/cameras/:id/live`,
+- [Routing](../../dashboard/client/src/App.tsx): `/watchlists` and `/cameras/:id/live`,
   with role-aware desktop/mobile navigation. Server authorization remains authoritative.
-- [Test configuration](integrations/fa/client/vitest.config.ts): `npm test` runs the
+- [Test configuration](../../dashboard/client/vitest.config.ts): `npm test` runs the
   persistent Vitest/DOM suite; `npm run test:watch` is available for development.
 
 ## Deployment decisions
 
-- [fa-server Compose](integrations/fa/server/docker-compose.yml) joins external
+- [fa-server Compose](../../dashboard/server/docker-compose.yml) joins external
   `${SPECTER_NETWORK:-specter_default}` and its own default network. MongoDB and MinIO
   stay on the default network for existing functionality, not Specter alert storage.
-- Specter's [base Compose](deploy/compose.base.yaml) uses project name `specter`;
-  [application Compose](deploy/compose.yaml) adds `api`, `camera-manager` and `detector`.
+- Specter's [base Compose](../../deploy/compose.infra.yaml) uses project name `specter`;
+  [application Compose](../../deploy/compose.specter.yaml) adds `api`, `camera-manager` and `detector`.
   fa connects to `http://api:8000` and `SPECTER_NATS_URL=nats://nats:4222`.
-- Both API and fa mount the same [token file](deploy/secrets/api.token) at
+- Both API and fa mount the same [token file](../../deploy/secrets/api.token) at
   `/run/secrets/specter_api_token`. The fa source path is
   `../../../deploy/secrets/api.token`, relative to its Compose directory.
 - Supply `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_KEY`, `MINIO_ACCESS_KEY` and
@@ -106,7 +106,7 @@ agent/operator supplies results. No secret or environment-file contents were rea
 | --- | --- |
 | Compose service names and secret path | Inspected both Specter Compose files; `realpath -m` resolves fa's three-parent path to the root deployment token without reading it |
 | Quiet fa Compose validation | Passed 2026-09-25: `docker compose --env-file /dev/null -f integrations/fa/server/docker-compose.yml config --quiet` in a cleared environment with non-secret placeholders; no environment files loaded or resolved configuration printed |
-| Quiet combined Specter Compose validation | Passed 2026-09-25: `docker compose --env-file /dev/null -f deploy/compose.base.yaml -f deploy/compose.yaml config --quiet` in a cleared environment; no containers started |
+| Quiet combined Specter Compose validation | Passed 2026-09-25: `docker compose --env-file /dev/null -f deploy/compose.infra.yaml -f deploy/compose.specter.yaml config --quiet` in a cleared environment; no containers started |
 | Scoped tracked diff validation | Passed 2026-09-25: `git diff --check` in the owning repositories; new deployment document checked separately before handoff |
 | Editor diagnostics | No Compose errors; archived v2 retains pre-existing Markdown lint warnings and is not claimed lint-clean |
 | Client regression suite | Passed 2026-09-25: `npm test`, 220 tests in 17 files; mocked APIs, DOM and MediaSource/WebSocket |

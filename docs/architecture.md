@@ -79,7 +79,7 @@ What matters for you:
 | `camera` | `specter camera --camera-id <id>` | Reads one camera, decides which frames to analyze, tracks objects, applies rules, identifies people, and publishes alert events. The camera manager starts it; you never do. |
 | `detector` | `specter detector` | Serves the AI models to every camera process, and enrolls reference images (turns a photo into vectors). |
 
-The services next to them (`deploy/compose.base.yaml`) all listen on `127.0.0.1`, except go2rtc's
+The services next to them (`deploy/compose.infra.yaml`) all listen on `127.0.0.1`, except go2rtc's
 WebRTC media port (`8555`), which viewers on the network must be able to reach.
 
 ## 3. What happens to a frame
@@ -347,7 +347,7 @@ Paths are the same inside every container. In Docker they are volumes; from sour
 
 | What | Path (Docker / from source) |
 |---|---|
-| Static settings | environment variables in `deploy/compose.yaml` / `config/specter.dev.yaml` |
+| Static settings | the root `.env` (`SPECTER_*`); service addresses in `deploy/compose.specter.yaml` / `config/specter.dev.yaml` |
 | Database, snapshots, reference images | volume `specter-data` at `/var/lib/specter` / `.dev/data` |
 | API token and camera credentials key | volume `specter-secrets` at `/etc/specter` / `.dev/secrets` |
 | AI models | `./models` at `/opt/specter/models` / `./models` |

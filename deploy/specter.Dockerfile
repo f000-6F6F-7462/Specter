@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #   Build it from the repository root:
-#   docker build -f deploy/Dockerfile .
+#   docker build -f deploy/specter.Dockerfile .
 
 # The Python runtime the models need is chosen here, per hardware profile:
 #   onnxruntime  pc-cpu, pc-nvidia (GPU also needs a CUDA base image), jetson

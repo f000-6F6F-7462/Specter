@@ -8,6 +8,8 @@ from specter.config.loading import CONFIG_FILE_ENVIRONMENT_VARIABLE, load_settin
 from specter.config.settings import DetectorBackend, HardwareProfile
 from specter.core.errors import ConfigurationError
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
 
 @pytest.fixture(autouse=True)
 def isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,10 +110,24 @@ def test_loading_fails_when_hardware_profile_is_unknown(tmp_path: Path) -> None:
         load_settings(config_file)
 
 
-@pytest.mark.parametrize("config_file_name", ["specter.example.yaml", "specter.dev.yaml"])
-def test_shipped_settings_files_are_valid(config_file_name: str) -> None:
-    config_file = Path(__file__).resolve().parents[3] / "config" / config_file_name
+def test_development_wiring_file_is_valid() -> None:
+    settings = load_settings(REPOSITORY_ROOT / "config" / "specter.dev.yaml")
 
-    settings = load_settings(config_file)
+    assert settings.paths.data_directory == Path(".dev/data")
 
-    assert settings.device.name
+
+def test_every_engine_setting_in_env_example_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Only SECTION__FIELD names are settings; SPECTER_EXTRA and SPECTER_OWNER_ID belong to the
+    # image build and the dashboard. An unknown field is rejected, so a renamed setting fails here.
+    engine_settings = {}
+    for line in (REPOSITORY_ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
+        assignment = line.removeprefix("#").strip()
+        name, separator, value = assignment.partition("=")
+        if separator and name.startswith("SPECTER_") and "__" in name:
+            engine_settings[name] = value
+    for name, value in engine_settings.items():
+        monkeypatch.setenv(name, value)
+
+    load_settings()
+
+    assert "SPECTER_DEVICE__HARDWARE_PROFILE" in engine_settings

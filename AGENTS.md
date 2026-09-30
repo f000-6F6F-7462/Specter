@@ -5,7 +5,7 @@ Always loaded: keep it short and current.
 ## Workspace
 - **Specter** (repo root, Python 3.12+, uv): headless edge vision engine. Reads RTSP cameras, detects, tracks and identifies people and objects (face, appearance re-id, zone/line rules), raises alerts with a JPEG snapshot. No UI and no users: an app server drives it over the HTTP API (FastAPI, `127.0.0.1:8000`, one Bearer token) and consumes NATS JetStream events (`:4222`). Docker services: NATS, Qdrant `:6333`, go2rtc `:1984`/`:8554`/`:8555`.
 - **FaceAlert "fa"** (`dashboard/`): the app server and web UI. A git submodule whose `server/` (fa-server) and `client/` (fa-client) are nested submodules with their own repos and branches: commit inside them, not in Specter.
-- **Active work**: connecting fa to Specter through an anti-corruption layer in fa-server. Plan: `integration_plan_fa_specter.md` (current architecture and verification status; grep `^## Phase` and read one phase).
+- **Active work**: connecting fa to Specter through an anti-corruption layer in fa-server. Plan: `docs/plans/fa-specter-integration.md` (current architecture and verification status; grep `^## Phase` and read one phase).
 
 ## Specter code map (`src/specter/`)
 `command_line.py`: `specter [--config FILE] api | camera-manager | camera --camera-id ID | detector | migrate` (or `$SPECTER_CONFIG_FILE`).
@@ -43,8 +43,10 @@ Where to change what:
 - Types: `uv run python -m mypy` (`uv run mypy` fails here with "Access is denied")
 - Tests: `uv run python -m pytest [path]` runs unit tests only (`uv run pytest` is also denied); 14 POSIX-only tests fail on Windows; `-m integration` needs NATS, Qdrant, FFmpeg; `-m models` needs `./models`.
 - Contracts: `uv run python -m specter.messaging.schemas contracts/jsonschema ; uv run python -m specter.api.openapi contracts/openapi.json` (drift tests fail otherwise)
-- Services: `docker compose -f deploy/compose.base.yaml up -d`; whole stack: add `-f deploy/compose.yaml`, then `up -d --build`.
-- From source: `uv run specter --config config/specter.dev.yaml migrate`, then the same with `api`, `camera-manager`, `detector`.
+- Run everything in Docker: `make up` (one root `.env` from `.env.example`); Specter alone: `make engine-up`. Each part separately from source: `docs/running.md`.
+- Services: `docker compose --env-file .env -f deploy/compose.infra.yaml up -d`; Specter: add `-f deploy/compose.specter.yaml`; dashboard: add `-f deploy/compose.dashboard.yaml`; then `up -d --build`.
+- From source: `uv run --env-file .env specter --config config/specter.dev.yaml migrate`, then the same with `api`, `camera-manager`, `detector`.
+- Configuration: one source, the root `.env` (every setting documented, commented out, in `.env.example`; engine settings are `SPECTER_<SECTION>__<FIELD>`, guarded by `tests/unit/config/test_settings.py`). Addresses between services are wiring: `deploy/compose.*.yaml`, `config/specter.dev.yaml`.
 - fa-server: `npm run dev|test|typecheck`; fa-client: `npm run dev|build|lint`.
 
 ## Conventions
@@ -64,5 +66,5 @@ fa-client: React 19, Vite, Tailwind, TanStack Query; API calls in `src/services/
 ## Token rules
 - Don't read or search: `node_modules/`, `.venv/`, `dist/`, `models/`, `.dev/`, `__pycache__/`, `uv.lock`, `package-lock.json`, `*.backup`.
 - Never open or print secrets (`סודות.txt`, `.env*`, `.dev/secrets/`); refer to them by path.
-- Docs are 5–22 KB each: grep the headings and read one section. `docs/architecture.md` (processes, flows, data model), `docs/integration/{app-integration-guide,http-api,nats-events,live-video}.md`, `docs/deployment.md`.
+- Docs are 5–22 KB each: grep the headings and read one section. `docs/architecture.md` (processes, flows, data model), `docs/integration/{app-integration-guide,http-api,nats-events,live-video}.md`, `docs/deployment.md`, `docs/running.md` (dev and product runs).
 - Keep replies short; don't echo unchanged code.

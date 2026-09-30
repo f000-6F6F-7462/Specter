@@ -87,7 +87,7 @@ Specter's processes run in Docker, next to NATS, Qdrant and go2rtc. From the rep
 
 ```bash
 make models     # once: exports and downloads the AI models (takes a while)
-make up         # builds the image and starts everything; safe to run again
+make engine-up  # builds the image and starts everything; safe to run again
 ```
 
 That starts the API, the camera manager and the detector, and restarts any of them if it crashes.
@@ -118,16 +118,16 @@ curl -s http://127.0.0.1:8000/health
 
 **Working on Specter's code?** Run the processes from source instead, without Docker for them
 (`make setup` once, then the `specter` CLI with the development settings — one process per
-terminal, after `docker compose -f deploy/compose.base.yaml up -d` starts NATS, Qdrant and
+terminal, after `docker compose -f deploy/compose.infra.yaml up -d` starts NATS, Qdrant and
 go2rtc):
 
 ```bash
-uv run specter --config config/specter.dev.yaml migrate
-uv run specter --config config/specter.dev.yaml api     # then camera-manager, then detector
+uv run --env-file .env specter --config config/specter.dev.yaml migrate
+uv run --env-file .env specter --config config/specter.dev.yaml api   # then camera-manager, detector
 ```
 
 Nothing restarts a process that crashes this way. The token is then `.dev/secrets/api.token` and
-the data is in `.dev/`. Do not run this and `make up` at the same time: they use the same ports.
+the data is in `.dev/`. Do not run this and `make engine-up` at the same time: they use the same ports.
 
 ## Quick start
 
@@ -482,7 +482,7 @@ app.get("/cameras/:id/frame.jpeg", requireLogin, async (req, res) => {
       assuming everything is fresh.
 - [ ] You ignore unknown fields in messages and check the major `schema_version`.
 - [ ] NATS (4222) and the API (8000) are still bound to localhost.
-- [ ] Whatever runs Specter restarts crashed processes (`make up` does; the `specter` CLI run by
+- [ ] Whatever runs Specter restarts crashed processes (`make engine-up` does; the `specter` CLI run by
       hand does not).
 
 ## Pitfalls

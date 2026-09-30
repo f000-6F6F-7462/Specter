@@ -1,12 +1,16 @@
 .DEFAULT_GOAL := help
 
-# Every Specter process runs in Docker. Running them from source is still possible with the
-# `specter` CLI directly; see README.md. It has no make targets, to keep this file to the
-# commands that are actually used.
-COMPOSE := docker compose -f deploy/compose.base.yaml -f deploy/compose.yaml
+# `make up` runs the whole system in Docker, configured by the root .env (see .env.example).
+# `make engine-up` starts Specter alone. Running each part separately, from source, is described in
+# docs/running.md.
+ENGINE_COMPOSE_FILES := -f deploy/compose.infra.yaml -f deploy/compose.specter.yaml
+PRODUCT_COMPOSE_FILES := $(ENGINE_COMPOSE_FILES) -f deploy/compose.dashboard.yaml
+# Recursive, so .env is picked up once prepare-environment.sh has created it.
+COMPOSE = docker compose $(if $(wildcard .env),--env-file .env) $(PRODUCT_COMPOSE_FILES)
 
-.PHONY: help setup format lint test check contracts \
-	models up down logs status api-token api-token-file clean clean-dev require-uv
+.PHONY: help setup format lint test check contracts models \
+	up engine-up down logs status \
+	api-token api-token-file clean clean-dev require-uv
 
 ##@ Setup
 
@@ -34,7 +38,7 @@ contracts: require-uv  ## Regenerate the NATS JSON Schemas and the HTTP OpenAPI 
 	uv run python -m specter.messaging.schemas contracts/jsonschema
 	uv run python -m specter.api.openapi contracts/openapi.json
 
-##@ Run
+##@ Models
 
 models:  ## Export and download every model into ./models (Docker; torch stays in the container)
 	docker build --tag specter-model-export deploy/models
@@ -43,12 +47,19 @@ models:  ## Export and download every model into ./models (Docker; torch stays i
 		--volume "$(CURDIR)/src/specter/inference/model_manifest.yaml:/manifest.yaml:ro" \
 		specter-model-export
 
-# Every process runs in a container, restarts when it crashes, and needs no Python on the machine.
-# Models must exist (make models).
-up: deploy/secrets/api.token  ## Build and start everything in Docker: services, API, camera manager, detector
-	$(COMPOSE) up -d --build
+##@ Run (everything in Docker, the dashboard on http://localhost:8080 by default)
 
-down:  ## Stop everything that make up started (data is kept)
+# Every process runs in a container, restarts when it crashes, and needs neither Python nor Node
+# on the machine. Models must exist (make models).
+up:  ## Build and start the whole system: Specter's services and processes, and the dashboard
+	scripts/prepare-environment.sh --dashboard
+	$(COMPOSE) up -d --build --wait
+
+engine-up:  ## Build and start Specter alone, without the dashboard
+	scripts/prepare-environment.sh
+	docker compose --env-file .env $(ENGINE_COMPOSE_FILES) up -d --build
+
+down:  ## Stop everything that make up or make engine-up started (data is kept)
 	$(COMPOSE) down
 
 logs:  ## Follow the logs of every container

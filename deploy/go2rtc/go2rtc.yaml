@@ -8,7 +8,7 @@ rtsp:
 # published beyond the device; the API handles the negotiation and keeps go2rtc's API private.
 webrtc:
   listen: ":8555"
-  # Set GO2RTC_WEBRTC_CANDIDATES in the environment (see compose.base.yaml).
+  # Set GO2RTC_WEBRTC_CANDIDATES in the environment (see compose.infra.yaml).
   candidates:
     - ${GO2RTC_WEBRTC_CANDIDATES}
 
