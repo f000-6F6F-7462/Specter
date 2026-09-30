@@ -1,19 +1,27 @@
-# Specter's own processes, added to the services in compose.base.yaml. Use the two files together:
-#   docker compose -f deploy/compose.base.yaml -f deploy/compose.yaml up -d --build
-# or simply `make up`.
+# Specter's own processes, added to the services in compose.infra.yaml. Use the two files together
+# with the root .env:
+#   docker compose --env-file .env -f deploy/compose.infra.yaml -f deploy/compose.specter.yaml \
+#     up -d --build
+# or simply `make engine-up`; `make up` adds compose.dashboard.yaml for the whole product.
 #
-# Everything reaches the other services by name on the Compose network. Only the API is published,
-# and only on localhost, so the application server runs on the same device.
+# Settings come from the root .env, which every process receives whole: Specter reads its
+# SPECTER_* variables and ignores the rest. The values below are wiring, not settings, so they
+# override .env. Everything reaches the other services by name on the Compose network. Only the
+# API is published, and only on localhost, so the application server runs on the same device.
 
 x-build: &build
   context: ..
-  dockerfile: deploy/Dockerfile
+  dockerfile: deploy/specter.Dockerfile
   args:
     # onnxruntime for pc-cpu, pc-nvidia and jetson; ncnn for raspberry-pi.
     SPECTER_EXTRA: ${SPECTER_EXTRA:-onnxruntime}
 
+# Optional, so `down`, `ps` and `logs` work before the first `make engine-up` creates it.
+x-env-file: &env-file
+  - path: ../.env
+    required: false
+
 x-environment: &environment
-  SPECTER_DEVICE__HARDWARE_PROFILE: ${SPECTER_HARDWARE_PROFILE:-pc-cpu}
   SPECTER_SERVICES__NATS_URL: nats://nats:4222
   SPECTER_SERVICES__QDRANT_URL: http://qdrant:6333
   SPECTER_SERVICES__GO2RTC_URL: http://go2rtc:1984
@@ -49,6 +57,7 @@ services:
     image: specter:local
     build: *build
     command: ["migrate"]
+    env_file: *env-file
     environment: *environment
     volumes: *volumes
     restart: "no"
@@ -57,6 +66,7 @@ services:
     image: specter:local
     build: *build
     command: ["api"]
+    env_file: *env-file
     environment:
       <<: *environment
       # Inside the container the API must listen on every interface for the published port.
@@ -89,6 +99,7 @@ services:
     image: specter:local
     build: *build
     command: ["camera-manager"]
+    env_file: *env-file
     environment: *environment
     volumes: *volumes-with-shared-memory
     # Lets the manager stop every camera process cleanly, and reaps them if it is killed.
@@ -105,6 +116,7 @@ services:
     image: specter:local
     build: *build
     command: ["detector"]
+    env_file: *env-file
     environment: *environment
     volumes: *volumes-with-shared-memory
     init: true

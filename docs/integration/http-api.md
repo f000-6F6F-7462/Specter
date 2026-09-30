@@ -23,7 +23,7 @@ Authorization: Bearer <token>
 
 The token is one long random string in a file (`security.api_token_file`, `/etc/specter/api.token`
 by default). In Docker it is `deploy/secrets/api.token` on the device, created by
-`make api-token-file` (`make up` runs it) and mounted into the `api` container as a Compose secret;
+`make api-token-file` (`make engine-up` runs it) and mounted into the `api` container as a Compose secret;
 mount the same file read-only into the application server. `make api-token` prints it. When run
 from source it is `.dev/secrets/api.token`, which Specter **creates on first start**, readable only
 by its owner. Read it once at startup, from the application server's configuration;

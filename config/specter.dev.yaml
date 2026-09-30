@@ -1,9 +1,8 @@
-# Settings for running every process on a development machine, from the repository root, against
-# the services that `make services-up` starts. The `make run-*` targets use this file.
-
-device:
-  name: development
-  hardware_profile: pc-cpu
+# Wiring for running Specter's processes from source, from the repository root, against the
+# services in deploy/compose.infra.yaml: where the data, models and secrets live on this machine
+# and where the services listen. It holds no settings; those come from the root .env, loaded with
+# `uv run --env-file .env specter --config config/specter.dev.yaml <process>` (see
+# docs/running.md). In Docker, deploy/compose.specter.yaml wires the same values.
 
 paths:
   # Relative to the repository root, and ignored by git.
@@ -21,7 +20,3 @@ security:
   credentials_key_file: .dev/secrets/credentials.key
   # Send it as a bearer token: curl -H "Authorization: Bearer $(cat .dev/secrets/api.token)"
   api_token_file: .dev/secrets/api.token
-
-logging:
-  level: INFO
-  format: text

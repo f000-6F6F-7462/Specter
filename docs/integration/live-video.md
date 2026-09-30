@@ -93,7 +93,7 @@ which the Docker Compose file publishes on all interfaces. Consequences:
 - go2rtc advertises the addresses in `GO2RTC_WEBRTC_CANDIDATES` (default `stun:8555`, which
   discovers the public address and needs internet access). Inside Docker the device's own
   addresses are container addresses, so on a local network set it to the address viewers use,
-  such as `GO2RTC_WEBRTC_CANDIDATES=192.168.1.50:8555`, in the environment of `make up`. This is a
+  such as `GO2RTC_WEBRTC_CANDIDATES=192.168.1.50:8555`, in `.env`. This is a
   deployment decision, not something the API can do for you.
 - Fall back to MSE or HLS when the WebRTC connection does not establish.
 
