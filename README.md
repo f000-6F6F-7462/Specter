@@ -14,6 +14,10 @@ Everything runs in Docker; the machine needs only Docker and git.
 git clone https://github.com/f000-6F6F-7462/Specter.git && cd Specter
 git submodule update --init --recursive --remote
 git submodule foreach --recursive 'git checkout -B master origin/master'
+
+sudo apt update
+sudo apt install -y make # install make if not already exist
+
 make models     # once: export and download the AI models (takes a while)
 make up         # first run: creates .env, then stops and names what to fill in
 ```
