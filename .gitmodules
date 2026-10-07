@@ -1,3 +1,5 @@
 [submodule "dashboard"]
 	path = dashboard
 	url = https://github.com/r-el/specter-dashboard.git
+	branch = master
+	update = checkout
