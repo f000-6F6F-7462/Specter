@@ -1,70 +1,102 @@
-# Agent guide: Specter + FaceAlert
+# Specter agent guide
 
-Always loaded: keep it short and current.
+Scope: this repository and its tracked `dashboard/` submodule. Prefer current source, manifests and
+product docs over old plans, cached checkouts or assumptions. Verify paths and Git status before
+editing.
 
-## Workspace
-- **Specter** (repo root, Python 3.12+, uv): headless edge vision engine. Reads RTSP cameras, detects, tracks and identifies people and objects (face, appearance re-id, zone/line rules), raises alerts with a JPEG snapshot. No UI and no users: an app server drives it over the HTTP API (FastAPI, `127.0.0.1:8000`, one Bearer token) and consumes NATS JetStream events (`:4222`). Docker services: NATS, Qdrant `:6333`, go2rtc `:1984`/`:8554`/`:8555`.
-- **FaceAlert "fa"** (`dashboard/`): the app server and web UI. A git submodule whose `server/` (fa-server) and `client/` (fa-client) are nested submodules with their own repos and branches: commit inside them, not in Specter.
-- **Active work**: connecting fa to Specter through an anti-corruption layer in fa-server. Plan: `docs/plans/fa-specter-integration.md` (current architecture and verification status; grep `^## Phase` and read one phase).
+## Repository boundaries
 
-## Specter code map (`src/specter/`)
-`command_line.py`: `specter [--config FILE] api | camera-manager | camera --camera-id ID | detector | migrate` (or `$SPECTER_CONFIG_FILE`).
+- The root repository is **Specter**, a Python 3.12+ edge-vision engine managed with `uv`.
+- [`dashboard/`](dashboard/) is a tracked submodule included by `make up`. It contains the dashboard
+  application; `dashboard/server/` and `dashboard/client/` are nested submodules.
+- Before dashboard work, check `git status` at the root, `dashboard/` and the affected nested
+  repository. Make changes/commits in the repository that owns the file. Do not switch branches,
+  update submodules or change their pointers unless asked.
+- Preserve existing worktree changes. Do not stage unrelated or untracked files.
 
-| Package | Role, key modules |
+## System map
+
+Specter has no user interface or user accounts. Its HTTP API handles reads and changes; NATS
+JetStream publishes events. The application server owns users and access control.
+
+| Path | Responsibility |
 |---|---|
-| `api/` | `main.py:create_app`; `routers/<resource>.py`; `schemas.py` shared bodies; `ownership.py` owner scoping; `notifications.py` publishes `configuration.changed` |
-| `camera/` | One process per camera: `stream_reader` → `scene_analyzer` (tracks, rules) → `person_identifier` → `alert_publisher`; `detector_client` |
-| `camera_manager/` | `supervisor` (spawns/restarts cameras, publishes status), `go2rtc` (registers streams), `alert_recorder` (NATS alert → DB), `evidence_retention` |
-| `detector/` | Serves models to every camera: `batcher` (object detection), `identification` (face/appearance embeddings), `enrollment` (reference image → Qdrant) |
-| `vision/` | Pure logic, no I/O: `sampling`, `tracking`, `rules`, `best_shot`, `quality`, `identity_matching` |
-| `inference/` | SCRFD, ArcFace, YOLO26, OSNet; `onnxruntime_backend`, `ncnn_backend`; `model_store` + `model_manifest.yaml` |
-| `messaging/` | `messages.py` = the NATS contract (pydantic); `subjects.py`; `streams.py` (streams, consumers, KV); `message_bus.py` |
-| `storage/` | SQLite via peewee: `tables.py`, one module per resource, `migrations/NNNN_*.py`; `vector_index.py` (Qdrant); `evidence.py`; `credentials.py` |
-| `entities/` | Domain model: frozen slotted dataclasses, validated in `__post_init__` |
-| `frame_transport/` | Shared-memory frames and detector request/reply |
-| `config/` | `settings.py` (pydantic-settings), `loading.py` (YAML + env) |
-| `core/` | `errors`, `identifiers`, `logging`, `shutdown` |
+| `src/specter/command_line.py` | `specter` CLI: `api`, `camera-manager`, `camera --camera-id`, `detector`, `migrate` |
+| `src/specter/api/` | FastAPI app, routers, schemas, authentication, ownership and notifications |
+| `src/specter/camera/` | Camera stream reading, scene analysis, identification and alert publishing |
+| `src/specter/camera_manager/` | Camera supervision, go2rtc registration, alert recording and evidence retention |
+| `src/specter/detector/` | Batched object detection, identification embeddings and async enrollment |
+| `src/specter/vision/` | Sampling, tracking, rules, best-shot selection, quality and identity matching |
+| `src/specter/inference/` | Face/object/appearance models, inference backends and model manifest |
+| `src/specter/messaging/` | NATS messages, subjects, streams, shared state and schema generation |
+| `src/specter/storage/` | SQLite persistence, migrations, evidence, credentials and Qdrant vector index |
+| `src/specter/entities/` | Validated domain dataclasses |
+| `src/specter/frame_transport/` | Shared-memory frames and detector request/reply |
+| `src/specter/config/`, `src/specter/core/` | Settings/loading and shared errors, identifiers, logging and shutdown |
+| `tests/unit/` | Unit tests mirroring the source packages |
+| `tests/integration/` | Tests requiring services or media tools |
+| `tests/models/` | Tests requiring downloaded model files |
 
-Every module starts with a one-line docstring: grep `^"""\S` in `src/specter/**/*.py` for a file-level map in one call. Tests mirror the tree under `tests/unit/`; also `tests/integration/`, `tests/models/`.
+Runtime services are NATS, Qdrant and go2rtc (`deploy/compose.infra.yaml`). Specter processes are
+`migrate`, `api`, `camera-manager` and `detector` (`deploy/compose.specter.yaml`); the manager starts
+one camera process per active camera. `deploy/compose.dashboard.yaml` adds the dashboard.
 
-Where to change what:
-- Endpoint: `api/routers/<resource>.py` → `storage/<resource>.py`; announce with `publish_configuration_change`; regenerate `contracts/openapi.json`; update `docs/integration/http-api.md`.
-- NATS message: `messaging/messages.py` (+ `subjects.py`, `streams.py`); regenerate `contracts/jsonschema/` (never hand-edit); update `docs/integration/nats-events.md`.
-- DB schema: `storage/tables.py` + new `storage/migrations/000N_<change>.py`.
+## Change map
 
-## Specter contract (what fa uses)
-- HTTP: `Authorization: Bearer <token>` (Docker: `deploy/secrets/api.token`; from source: `.dev/secrets/api.token`); OpenAPI at `/docs` and `contracts/openapi.json`. Everything is under `/owners/{owner_id}/` except `/health`: `cameras` (+ `/start`, `/stop`; `metadata`), `cameras/{id}/zones|rules|live`, `watchlists/{id}/targets` (multipart photos, `/images/{id}` download), `enrollment-batches/{id}`, `alerts` (merged list, `/summary`, `/identity-matches`, `/rules`, `/{id}`, `/acknowledge`, `/resolve`, `/snapshot`; `camera_id` repeatable).
-- NATS: `specter.owners.{owner}.cameras.{camera}.{match_confirmed|rule_triggered|status_changed}` and `specter.owners.{owner}.{enrollment.status_changed|configuration.changed}`. Streams `EVENTS` (7 days), `CAMERA_STATUS`, `CONFIGURATION`; KV `camera_health` (10 s TTL). Internal, never consume: `ENROLLMENT_JOBS`, `specter.detector.*`. JSON Schemas: `contracts/jsonschema/`.
-- Gotchas: `start` only requests, so wait for `status_changed`; enrollment is async; at most one identity alert per target and camera per cooldown (30 s); a just-published alert can 404 on `GET` briefly, so retry; zone and rule coordinates are 0–1 fractions.
+- **HTTP API:** update the relevant `src/specter/api/routers/` module and, as needed, shared
+  `api/schemas.py`, storage/domain code and tests. Regenerate `contracts/openapi.json` with
+  `make contracts`; update [`docs/integration/http-api.md`](docs/integration/http-api.md).
+- **NATS:** update `messaging/messages.py` and affected subjects, streams, consumers or shared state.
+  Regenerate `contracts/jsonschema/` with `make contracts`—never hand-edit generated contracts—and
+  update [`docs/integration/nats-events.md`](docs/integration/nats-events.md).
+- **Database:** update `storage/tables.py` and add the next numbered migration under
+  `storage/migrations/`. Inspect the migration runner and tests before changing migration behavior.
+- **Configuration:** update `config/settings.py` and/or `config/loading.py`; document user-facing
+  changes and keep service wiring in `config/specter.dev.yaml` or the relevant Compose file.
+  Settings use YAML plus environment variables (`SPECTER_` prefix, `__` nested delimiter).
+- **Application integration:** follow the current HTTP and NATS contracts in `contracts/` and
+  [`docs/integration/`](docs/integration/). Specter owns camera/vision resources; the application
+  server owns user identity and access control.
 
-## Commands (Windows, pwsh: `make` is not installed, so use these)
-- Setup: `uv sync`
-- Lint: `uv run ruff format --check . ; uv run ruff check .` (fix: `uv run ruff format . ; uv run ruff check --fix .`)
-- Types: `uv run python -m mypy` (`uv run mypy` fails here with "Access is denied")
-- Tests: `uv run python -m pytest [path]` runs unit tests only (`uv run pytest` is also denied); 14 POSIX-only tests fail on Windows; `-m integration` needs NATS, Qdrant, FFmpeg; `-m models` needs `./models`.
-- Contracts: `uv run python -m specter.messaging.schemas contracts/jsonschema ; uv run python -m specter.api.openapi contracts/openapi.json` (drift tests fail otherwise)
-- Run everything in Docker: `make up` (one root `.env` from `.env.example`); Specter alone: `make engine-up`. Each part separately from source: `docs/running.md`.
-- Services: `docker compose --env-file .env -f deploy/compose.infra.yaml up -d`; Specter: add `-f deploy/compose.specter.yaml`; dashboard: add `-f deploy/compose.dashboard.yaml`; then `up -d --build`.
-- From source: `uv run --env-file .env specter --config config/specter.dev.yaml migrate`, then the same with `api`, `camera-manager`, `detector`.
-- Configuration: one source, the root `.env` (every setting documented, commented out, in `.env.example`; engine settings are `SPECTER_<SECTION>__<FIELD>`, guarded by `tests/unit/config/test_settings.py`). Addresses between services are wiring: `deploy/compose.*.yaml`, `config/specter.dev.yaml`.
-- fa-server: `npm run dev|test|typecheck`; fa-client: `npm run dev|build|lint`.
+## Dashboard
 
-## Conventions
-Specter (ruff and strict mypy enforce the rest; lines ≤ 100):
-- Google-style docstrings (ruff `D`, not in tests); comments say why, not what.
-- Full-word names; booleans `is_*`; constants carry units (`*_SECONDS`, `*_BYTES`).
-- Entities are frozen dataclasses; NATS messages and API bodies are pydantic.
+Treat `dashboard/` as a separate repository boundary, not as Specter source. Inspect its current
+README, nested repository status and `package.json` before relying on structure, runtime versions or
+scripts. The current layout has an Express/TypeScript server under `server/` and a React/Vite client
+under `client/`; each is independently versioned. Contract sync, when relevant, is run from the
+server package with `npm run specter:contracts`.
 
-fa-server (Express 5, ESM, TypeScript non-strict, vitest):
-- Imports end in `.js`. A new path alias goes in both `tsconfig.json` `paths` and `vitest.config.ts` `resolve.alias`.
-- Feature folder: `*Routes` → `*Controller` → `*Service`; ports in `domain/`, adapters in `infrastructure/` with `tokens.ts` (`Symbol.for("fa.<feature>.<Name>")`), registered in `src/core/di.ts` (tsyringe).
-- Auth middleware: `authenticateToken`, `requireRole([...])`. Data: Supabase (users, cameras), MongoDB (events, GridFS photos), Qdrant (vectors), Socket.IO (live notifications).
-- Specter ACL in `server/src/specter/` (typed client, NATS stream, catalog); every route under `/api`. After Specter contract changes: `npm run specter:contracts`. Camera access: `CameraService.getAccessibleCamera`/`getManageableCamera`; live WS is relayed in `src/live/` (ticket, `upgrade` handler).
+## Run and validate
 
-fa-client: React 19, Vite, Tailwind, TanStack Query; API calls in `src/services/` and `src/lib/api-client.ts`; UI primitives in `src/components/ui/`.
+The root [`Makefile`](Makefile) and package manifests are authoritative for commands:
 
-## Token rules
-- Don't read or search: `node_modules/`, `.venv/`, `dist/`, `models/`, `.dev/`, `__pycache__/`, `uv.lock`, `package-lock.json`, `*.backup`.
-- Never open or print secrets (`סודות.txt`, `.env*`, `.dev/secrets/`); refer to them by path.
-- Docs are 5–22 KB each: grep the headings and read one section. `docs/architecture.md` (processes, flows, data model), `docs/integration/{app-integration-guide,http-api,nats-events,live-video}.md`, `docs/deployment.md`, `docs/running.md` (dev and product runs).
-- Keep replies short; don't echo unchanged code.
+- `make setup` prepares Python dependencies and hooks. `make check` runs formatting, lint, types and
+  unit tests; focused alternatives are `make lint` and `make test`.
+- `make contracts` regenerates HTTP and NATS contracts. `make models` downloads/prepares model files.
+- `make engine-up` runs Specter and its services in Docker; `make up` also builds the dashboard.
+  `make status`, `make logs` and `make down` inspect or stop the Compose stack; `make down` keeps
+  data. Do not run source processes and `make engine-up` together because they share ports.
+- For source runs, follow [`docs/running.md`](docs/running.md). Integration and model test
+  prerequisites are described in [`pyproject.toml`](pyproject.toml) and the docs.
+- For dashboard changes, use the selected nested package's declared scripts (typically server
+  `npm run test` / `npm run typecheck`; client `npm run test` / `npm run build` / `npm run lint`).
+  Check the package's Node/npm engine requirements first.
+- `make clean-dev` deletes development data and Docker volumes. Run it only when explicitly asked.
+
+Other product references: [`README.md`](README.md), [`docs/architecture.md`](docs/architecture.md),
+[`docs/deployment.md`](docs/deployment.md), [`docs/running.md`](docs/running.md), and
+[`docs/integration/app-integration-guide.md`](docs/integration/app-integration-guide.md).
+
+## Safety and conventions
+
+- Never read, print or copy secret values. Do not inspect `.env*`, `.dev/`, `deploy/secrets/` or
+  credential files. Use `config/settings.py` and public docs for setting names; refer to secret files
+  by path only.
+- Avoid dependency, generated, runtime and model data (`node_modules/`, `.venv/`, `dist/`, `models/`,
+  `__pycache__/`, caches and `*.backup`) unless the task explicitly concerns them. Do not modify
+  lockfiles unless dependency changes require it.
+- Specter uses Ruff formatting/lint, strict mypy, 100-character Python lines and Google-style
+  docstrings. Prefer existing helpers and validated entities; comments explain why, not what.
+- Follow the selected dashboard package's local conventions. Keep API/NATS docs, generated
+  contracts and tests in sync with behavior changes.
+- Do not commit unless asked. Never discard another contributor's changes.

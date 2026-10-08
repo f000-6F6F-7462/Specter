@@ -3,15 +3,15 @@
 #   docker compose --env-file .env -f deploy/compose.infra.yaml -f deploy/compose.specter.yaml \
 #     -f deploy/compose.dashboard.yaml up -d --build
 #
-# The dashboard is the only part published beyond the device: users open it on DASHBOARD_PORT. It
-# reaches Specter's API, NATS and Qdrant by name on the Compose network.
+# Local development runs the API and static client as separate services. In production, deploy the
+# server image independently and build the client with its public VITE_API_BASE_URL.
 
 services:
-  dashboard:
-    image: specter-dashboard:local
+  dashboard-server:
+    image: specter-dashboard-server:local
     build:
-      context: ../dashboard
-      dockerfile: ../deploy/dashboard.Dockerfile
+      context: ../dashboard/server
+      dockerfile: Dockerfile
     # Every setting of the root .env; the values below are the ones that differ inside Docker.
     # Optional, so `down`, `ps` and `logs` work without it; `make up` checks it first.
     env_file:
@@ -20,13 +20,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 12113
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
       SPECTER_API_URL: http://api:8000
       SPECTER_NATS_URL: nats://nats:4222
       SPECTER_API_TOKEN_FILE: /run/secrets/specter_api_token
       QDRANT_URL: http://qdrant:6333
     secrets: [specter_api_token]
     ports:
-      - "${DASHBOARD_PORT:-8080}:12113"
+      - "${DASHBOARD_API_PORT:-12113}:12113"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:12113/api/health"]
       interval: 10s
@@ -37,4 +38,23 @@ services:
       api: {condition: service_healthy}
       nats: {condition: service_healthy}
       qdrant: {condition: service_started}
+    restart: unless-stopped
+
+  dashboard-client:
+    image: specter-dashboard-client:local
+    build:
+      context: ../dashboard/client
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:12113}
+    ports:
+      - "${DASHBOARD_PORT:-8080}:4173"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:4173/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    depends_on:
+      dashboard-server: {condition: service_healthy}
     restart: unless-stopped
