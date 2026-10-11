@@ -1,0 +1,13 @@
+[project]
+name = "specter-agent"
+version = "0.1.0"
+description = "Local multi-camera gateway for Specter"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
