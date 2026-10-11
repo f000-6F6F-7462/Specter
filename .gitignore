@@ -25,6 +25,9 @@ htmlcov/
 .env.local
 .env.*.local
 /deploy/secrets/
+# Self-signed certificate and private key that MediaMTX writes where it is started
+auto.crt
+auto.key
 
 /config/specter.yaml
 
