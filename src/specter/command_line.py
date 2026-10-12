@@ -34,6 +34,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     camera_parser = commands.add_parser("camera", help="capture and analyze a single camera")
     camera_parser.add_argument("--camera-id", required=True, help="id of the camera to run")
     commands.add_parser("detector", help="serve models to all camera processes")
+    commands.add_parser("agent", help="connect to the cloud backend as an edge agent")
     commands.add_parser("migrate", help="apply pending database migrations")
     return parser
 
@@ -71,6 +72,10 @@ def main(arguments: Sequence[str] | None = None) -> None:
             from specter.detector.main import run as run_detector  # noqa: PLC0415
 
             asyncio.run(run_until_shutdown_signal(partial(run_detector, settings)))
+        case "agent":
+            from specter.agent.main import run as run_agent  # noqa: PLC0415
+
+            asyncio.run(run_until_shutdown_signal(partial(run_agent, settings)))
         case "migrate":
             from specter.storage.migrate import migrate_database_file  # noqa: PLC0415
 
