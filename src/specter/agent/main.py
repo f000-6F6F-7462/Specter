@@ -188,7 +188,7 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     webrtc_relay.register_handlers()
     _setup_watchlist_sync(connector, settings, api_token)
 
-    await connector.connect()
+    await connector.connect(shutdown_requested=shutdown_requested)
 
     # Launch background tasks
     heartbeat_task = asyncio.create_task(connector.run_heartbeat_loop(shutdown_requested))

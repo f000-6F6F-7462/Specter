@@ -100,22 +100,42 @@ class CloudConnector:
         self._sio.on("agent:cameras:request_push", on_request_cameras_push, namespace="/agent")
         self._sio.on("cameras:request_sync", on_request_cameras_push, namespace="/agent")
 
-    async def connect(self) -> None:
-        """Connects to the cloud backend at /agent with authentication token."""
+    async def connect(
+        self,
+        shutdown_requested: asyncio.Event | None = None,
+        retry_interval: float = 3.0,
+    ) -> None:
+        """Connects to the cloud backend at /agent, retrying on failure."""
         auth = {"token": self._settings.agent.agent_token}
         url = self._settings.agent.backend_url.rstrip("/")
         logger.info("Connecting to cloud backend at %s...", url)
-        try:
-            await self._sio.connect(
-                url,
-                namespaces=["/agent"],
-                auth=auth,
-                transports=["websocket", "polling"],
-            )
-        except Exception as error:
-            logger.warning(
-                "Initial connection to %s failed (%s); will retry in background", url, error
-            )
+        while True:
+            if shutdown_requested is not None and shutdown_requested.is_set():
+                break
+            try:
+                await self._sio.connect(
+                    url,
+                    namespaces=["/agent"],
+                    auth=auth,
+                    transports=["websocket", "polling"],
+                )
+                break
+            except Exception as error:
+                logger.warning(
+                    "Connection to %s failed (%s); retrying in %.1fs...",
+                    url,
+                    error,
+                    retry_interval,
+                )
+                if shutdown_requested is not None:
+                    try:
+                        await asyncio.wait_for(shutdown_requested.wait(), timeout=retry_interval)
+                        break
+                    except TimeoutError:
+                        pass
+                else:
+                    await asyncio.sleep(retry_interval)
+                    break
 
     async def request_camera_sync(self) -> None:
         """Emits a request to the backend for an immediate camera sync."""
