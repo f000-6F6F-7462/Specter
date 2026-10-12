@@ -25,7 +25,10 @@ services:
       SPECTER_NATS_URL: nats://nats:4222
       SPECTER_API_TOKEN_FILE: /run/secrets/specter_api_token
       QDRANT_URL: http://qdrant:6333
-    secrets: [specter_api_token]
+    secrets:
+      - source: specter_api_token
+        target: /run/secrets/specter_api_token
+        mode: 0444
     ports:
       - "${DASHBOARD_API_PORT:-12113}:12113"
     healthcheck:
