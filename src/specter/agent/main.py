@@ -8,6 +8,7 @@ from specter.agent.alert_forwarder import AlertForwarder
 from specter.agent.camera_sync import CameraSyncReconciler
 from specter.agent.cloud_connector import CloudConnector
 from specter.agent.offline_queue import OfflineQueue
+from specter.agent.watchlist_sync import WatchlistSyncReconciler
 from specter.agent.webrtc_relay import WebRtcRelay
 from specter.config.settings import Settings
 from specter.messaging.message_bus import MessageBus
@@ -118,6 +119,21 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         api_token=api_token,
     )
     webrtc_relay.register_handlers()
+
+    watchlist_reconciler = WatchlistSyncReconciler(
+        specter_api_url=settings.agent.specter_api_url,
+        owner_id=settings.agent.owner_id,
+        api_token=api_token,
+        backend_url=settings.agent.backend_url,
+        agent_token=settings.agent.agent_token,
+    )
+
+    async def on_watchlists_sync(data: dict[str, Any]) -> None:
+        watchlists = data.get("watchlists", [])
+        logger.info("Reconciling %d watchlists with local Specter engine", len(watchlists))
+        await watchlist_reconciler.reconcile_watchlists(watchlists)
+
+    connector.sio.on("watchlists:sync", on_watchlists_sync, namespace="/agent")
 
     # Connect to the cloud backend
     await connector.connect()
