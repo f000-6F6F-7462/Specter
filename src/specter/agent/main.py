@@ -8,6 +8,7 @@ from specter.agent.alert_forwarder import AlertForwarder
 from specter.agent.camera_sync import CameraSyncReconciler
 from specter.agent.cloud_connector import CloudConnector
 from specter.agent.offline_queue import OfflineQueue
+from specter.agent.webrtc_relay import WebRtcRelay
 from specter.config.settings import Settings
 from specter.messaging.message_bus import MessageBus
 
@@ -110,6 +111,14 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         evidence_root=settings.paths.data_directory,
     )
 
+    webrtc_relay = WebRtcRelay(
+        cloud_connector=connector,
+        specter_api_url=settings.agent.specter_api_url,
+        owner_id=settings.agent.owner_id,
+        api_token=api_token,
+    )
+    webrtc_relay.register_handlers()
+
     # Connect to the cloud backend
     await connector.connect()
 
@@ -124,6 +133,7 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         heartbeat_task.cancel()
         forwarder_task.cancel()
         await asyncio.gather(heartbeat_task, forwarder_task, return_exceptions=True)
+        await webrtc_relay.close()
         await connector.disconnect()
         await message_bus.close()
         logger.info("Specter edge agent stopped cleanly.")
