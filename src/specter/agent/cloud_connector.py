@@ -39,6 +39,11 @@ class CloudConnector:
         """Returns True if the socket is currently connected to the backend."""
         return self._is_connected
 
+    @property
+    def sio(self) -> Any:
+        """Returns the underlying Socket.IO AsyncClient."""
+        return self._sio
+
     def _register_handlers(self) -> None:
         """Registers Socket.IO event handlers for the /agent namespace."""
 
