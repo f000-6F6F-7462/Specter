@@ -160,6 +160,25 @@ class LoggingSettings(_StrictModel):
     format: LogFormat = LogFormat.TEXT
 
 
+class AgentSettings(_StrictModel):
+    """Settings for connecting the edge agent to the cloud backend."""
+
+    mode: Literal["local", "cloud"] = "local"
+    backend_url: str = "http://localhost:12113"
+    agent_token: str = ""
+    owner_id: str = "specter"
+    specter_api_url: str = "http://127.0.0.1:8000"
+    specter_api_token: str = ""
+    heartbeat_interval_seconds: float = Field(default=30.0, gt=0)
+    sync_interval_seconds: float = Field(default=30.0, gt=0)
+    sync_on_connect: bool = True
+    ice_servers: list[dict[str, Any]] = Field(
+        default_factory=lambda: [
+            {"urls": "stun:stun.cloudflare.com:3478"},
+        ]
+    )
+
+
 class Settings(BaseSettings):
     """All static settings of a Specter process."""
 
@@ -176,6 +195,7 @@ class Settings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    agent: AgentSettings = Field(default_factory=AgentSettings)
 
     @model_validator(mode="before")
     @classmethod
