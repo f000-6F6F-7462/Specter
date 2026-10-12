@@ -147,6 +147,9 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     async def on_cameras_sync(cameras: list[dict[str, Any]]) -> None:
         """Handles incoming cameras sync payload from backend."""
         logger.info("Reconciling %d cameras with local Specter engine", len(cameras))
+        if not cameras:
+            logger.info("Ignoring empty camera sync payload to preserve local cameras")
+            return
         await reconciler.reconcile(cameras)
 
     async def on_cameras_updated(data: dict[str, Any]) -> None:
