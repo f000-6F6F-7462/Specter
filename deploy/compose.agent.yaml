@@ -1,0 +1,26 @@
+# Specter Edge Agent process, connecting this on-premise engine to the cloud backend.
+# Run together with infra and engine:
+#   docker compose --env-file .env -f deploy/compose.infra.yaml -f deploy/compose.specter.yaml -f deploy/compose.agent.yaml up -d
+
+x-build: &build
+  context: ..
+  dockerfile: deploy/specter.Dockerfile
+  args:
+    SPECTER_EXTRA: ${SPECTER_EXTRA:-onnxruntime}
+
+x-env-file: &env-file
+  - path: ../.env
+    required: false
+
+services:
+  agent:
+    image: specter:local
+    build: *build
+    command: ["agent"]
+    restart: unless-stopped
+    env_file: *env-file
+    environment:
+      SPECTER_AGENT__SPECTER_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_started
