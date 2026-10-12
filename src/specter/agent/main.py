@@ -27,6 +27,54 @@ def _resolve_api_token(settings: Settings) -> str:
     return ""
 
 
+def _build_cloud_connector(
+    settings: Settings,
+    reconciler: CameraSyncReconciler,
+) -> CloudConnector:
+    """Builds and wires the CloudConnector with reconciliation and control callbacks."""
+    connector: CloudConnector | None = None
+
+    async def on_cameras_sync(cameras: list[dict[str, Any]]) -> None:
+        logger.info("Reconciling %d cameras with local Specter engine", len(cameras))
+        await reconciler.reconcile(cameras)
+
+    async def on_cameras_updated(data: dict[str, Any]) -> None:
+        logger.info("Camera change detected in cloud: %s; requesting sync", data)
+        if connector is not None:
+            await connector.request_camera_sync()
+
+    async def on_connected() -> None:
+        try:
+            local_cameras = await reconciler.fetch_local_cameras()
+            if connector is not None:
+                await connector.push_cameras_sync(local_cameras)
+                await connector.request_camera_sync()
+        except Exception as error:
+            logger.warning("Failed to push initial camera sync to cloud: %s", error)
+
+    async def on_camera_start(camera_id: str) -> None:
+        try:
+            await reconciler.start_camera(camera_id)
+        except Exception as error:
+            logger.error("Failed to start camera %s: %s", camera_id, error)
+
+    async def on_camera_stop(camera_id: str) -> None:
+        try:
+            await reconciler.stop_camera(camera_id)
+        except Exception as error:
+            logger.error("Failed to stop camera %s: %s", camera_id, error)
+
+    connector = CloudConnector(
+        settings=settings,
+        on_cameras_sync=on_cameras_sync,
+        on_cameras_updated=on_cameras_updated,
+        on_connected=on_connected,
+        on_camera_start=on_camera_start,
+        on_camera_stop=on_camera_stop,
+    )
+    return connector
+
+
 async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     """Runs the Specter edge agent process until shutdown is requested."""
     logger.info(
@@ -52,24 +100,7 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     except Exception as error:
         logger.warning("Agent could not connect to NATS immediately: %s", error)
 
-    connector: CloudConnector | None = None
-
-    async def on_cameras_sync(cameras: list[dict[str, Any]]) -> None:
-        """Handles incoming cameras sync payload from backend."""
-        logger.info("Reconciling %d cameras with local Specter engine", len(cameras))
-        await reconciler.reconcile(cameras)
-
-    async def on_cameras_updated(data: dict[str, Any]) -> None:
-        """Handles incremental camera update notification by requesting fresh sync."""
-        logger.info("Camera change detected in cloud: %s; requesting sync", data)
-        if connector is not None:
-            await connector.request_camera_sync()
-
-    connector = CloudConnector(
-        settings=settings,
-        on_cameras_sync=on_cameras_sync,
-        on_cameras_updated=on_cameras_updated,
-    )
+    connector = _build_cloud_connector(settings, reconciler)
 
     alert_forwarder = AlertForwarder(
         owner_id=settings.agent.owner_id,

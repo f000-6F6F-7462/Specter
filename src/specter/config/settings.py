@@ -166,6 +166,7 @@ class AgentSettings(_StrictModel):
     mode: Literal["local", "cloud"] = "local"
     backend_url: str = "http://localhost:12113"
     agent_token: str = ""
+    agent_name: str = "Specter Edge Agent"
     owner_id: str = "specter"
     specter_api_url: str = "http://127.0.0.1:8000"
     specter_api_token: str = ""

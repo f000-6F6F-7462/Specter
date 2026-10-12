@@ -217,3 +217,30 @@ class CameraSyncReconciler:
             logger.info("Deleted local camera %s", camera_id)
         except Exception as error:
             logger.error("Failed to delete local camera %s: %s", camera_id, error)
+
+    async def start_camera(self, camera_id: str) -> None:
+        """Starts a local camera."""
+        client = await self._get_client()
+        should_close = self._http_client is None
+        try:
+            url = f"{self._specter_api_url}/owners/{self._owner_id}/cameras/{camera_id}/start"
+            response = await client.post(url, headers=self._headers)
+            response.raise_for_status()
+            logger.info("Started local camera %s", camera_id)
+        finally:
+            if should_close:
+                await client.aclose()
+
+    async def stop_camera(self, camera_id: str) -> None:
+        """Stops a local camera."""
+        client = await self._get_client()
+        should_close = self._http_client is None
+        try:
+            url = f"{self._specter_api_url}/owners/{self._owner_id}/cameras/{camera_id}/stop"
+            response = await client.post(url, headers=self._headers)
+            response.raise_for_status()
+            logger.info("Stopped local camera %s", camera_id)
+        finally:
+            if should_close:
+                await client.aclose()
+

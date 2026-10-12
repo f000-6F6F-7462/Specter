@@ -20,11 +20,17 @@ class CloudConnector:
         settings: Settings,
         on_cameras_sync: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
         on_cameras_updated: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_connected: Callable[[], Awaitable[None]] | None = None,
+        on_camera_start: Callable[[str], Awaitable[None]] | None = None,
+        on_camera_stop: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         """Initializes the cloud connector with settings and event callbacks."""
         self._settings = settings
         self._on_cameras_sync = on_cameras_sync
         self._on_cameras_updated = on_cameras_updated
+        self._on_connected = on_connected
+        self._on_camera_start = on_camera_start
+        self._on_camera_stop = on_camera_stop
         self._sio = socketio.AsyncClient(
             reconnection=True,
             reconnection_attempts=0,  # retry indefinitely
@@ -53,6 +59,20 @@ class CloudConnector:
                 "Connected to cloud backend at %s (/agent namespace)",
                 self._settings.agent.backend_url,
             )
+            try:
+                await self._sio.emit(
+                    "agent:heartbeat",
+                    {"name": self._settings.agent.agent_name, "version": "0.2.0"},
+                    namespace="/agent",
+                )
+            except Exception as error:
+                logger.debug("Failed to send initial heartbeat: %s", error)
+
+            if self._on_connected is not None:
+                try:
+                    await self._on_connected()
+                except Exception as error:
+                    logger.error("Error in on_connected callback: %s", error)
 
         async def on_disconnect() -> None:
             self._is_connected = False
@@ -73,6 +93,18 @@ class CloudConnector:
             if self._on_cameras_updated is not None:
                 await self._on_cameras_updated(data)
 
+        async def on_camera_start_event(data: dict[str, Any]) -> None:
+            camera_id = data.get("cameraId", "")
+            logger.info("Cloud requested camera start: %s", camera_id)
+            if camera_id and self._on_camera_start is not None:
+                await self._on_camera_start(camera_id)
+
+        async def on_camera_stop_event(data: dict[str, Any]) -> None:
+            camera_id = data.get("cameraId", "")
+            logger.info("Cloud requested camera stop: %s", camera_id)
+            if camera_id and self._on_camera_stop is not None:
+                await self._on_camera_stop(camera_id)
+
         async def on_heartbeat_ack(data: dict[str, Any]) -> None:
             logger.debug("Received heartbeat ack: %s", data)
 
@@ -81,6 +113,8 @@ class CloudConnector:
         self._sio.on("connect_error", on_connect_error, namespace="/agent")
         self._sio.on("cameras:sync", on_cameras_sync_event, namespace="/agent")
         self._sio.on("cameras:updated", on_cameras_updated_event, namespace="/agent")
+        self._sio.on("agent:camera:start", on_camera_start_event, namespace="/agent")
+        self._sio.on("agent:camera:stop", on_camera_stop_event, namespace="/agent")
         self._sio.on("agent:heartbeat:ack", on_heartbeat_ack, namespace="/agent")
 
     async def connect(self) -> None:
@@ -99,6 +133,16 @@ class CloudConnector:
             logger.warning(
                 "Initial connection to %s failed (%s); will retry in background", url, error
             )
+
+    async def push_cameras_sync(self, cameras: list[dict[str, Any]]) -> None:
+        """Pushes the local camera catalog to the cloud backend."""
+        if self._sio.connected:
+            await self._sio.emit(
+                "agent:cameras:sync",
+                {"cameras": cameras},
+                namespace="/agent",
+            )
+            logger.info("Pushed %d local cameras to cloud backend", len(cameras))
 
     async def request_camera_sync(self) -> None:
         """Emits a request to the backend for an immediate camera sync."""
@@ -120,8 +164,8 @@ class CloudConnector:
             if self._sio.connected:
                 try:
                     payload = {
-                        "name": self._settings.device.name,
-                        "version": "0.1.0",
+                        "name": self._settings.agent.agent_name,
+                        "version": "0.2.0",
                     }
                     await self._sio.emit("agent:heartbeat", payload, namespace="/agent")
                     logger.debug("Sent heartbeat to cloud backend")
