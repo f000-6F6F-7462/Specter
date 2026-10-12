@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 from specter.agent.alert_forwarder import AlertForwarder
@@ -92,7 +93,13 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         api_token=api_token,
     )
 
-    queue_db_path = settings.paths.data_directory / "agent_offline_queue.sqlite3"
+    queue_dir = settings.paths.data_directory
+    try:
+        queue_dir.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        queue_dir = Path.home() / ".specter"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+    queue_db_path = queue_dir / "agent_offline_queue.sqlite3"
     offline_queue = OfflineQueue(queue_db_path)
 
     message_bus = MessageBus(client_name="specter-agent")
