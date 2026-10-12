@@ -145,6 +145,14 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     # Connect to the cloud backend
     await connector.connect()
 
+    # Immediately push local cameras to populate cloud backend store
+    try:
+        local_cameras = await reconciler.fetch_local_cameras()
+        await connector.push_cameras_sync(local_cameras)
+        await connector.request_camera_sync()
+    except Exception as error:
+        logger.warning("Failed to push initial camera sync to cloud: %s", error)
+
     # Launch background tasks
     heartbeat_task = asyncio.create_task(connector.run_heartbeat_loop(shutdown_requested))
     forwarder_task = asyncio.create_task(alert_forwarder.run(shutdown_requested))

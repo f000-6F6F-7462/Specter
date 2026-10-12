@@ -50,7 +50,7 @@ class CloudConnector:
         """Returns the underlying Socket.IO AsyncClient."""
         return self._sio
 
-    def _register_handlers(self) -> None:
+    def _register_handlers(self) -> None:  # noqa: PLR0915
         """Registers Socket.IO event handlers for the /agent namespace."""
 
         async def on_connect() -> None:
@@ -108,6 +108,14 @@ class CloudConnector:
         async def on_heartbeat_ack(data: dict[str, Any]) -> None:
             logger.debug("Received heartbeat ack: %s", data)
 
+        async def on_cloud_request_camera_sync(_data: Any = None) -> None:
+            logger.info("Cloud requested camera catalog from agent")
+            if self._on_connected is not None:
+                try:
+                    await self._on_connected()
+                except Exception as error:
+                    logger.error("Error in on_connected callback: %s", error)
+
         self._sio.on("connect", on_connect, namespace="/agent")
         self._sio.on("disconnect", on_disconnect, namespace="/agent")
         self._sio.on("connect_error", on_connect_error, namespace="/agent")
@@ -115,6 +123,7 @@ class CloudConnector:
         self._sio.on("cameras:updated", on_cameras_updated_event, namespace="/agent")
         self._sio.on("agent:camera:start", on_camera_start_event, namespace="/agent")
         self._sio.on("agent:camera:stop", on_camera_stop_event, namespace="/agent")
+        self._sio.on("agent:cameras:request_sync", on_cloud_request_camera_sync, namespace="/agent")
         self._sio.on("agent:heartbeat:ack", on_heartbeat_ack, namespace="/agent")
 
     async def connect(self, max_retries: int = 5, retry_delay: float = 2.0) -> None:
@@ -151,21 +160,25 @@ class CloudConnector:
 
     async def push_cameras_sync(self, cameras: list[dict[str, Any]]) -> None:
         """Pushes the local camera catalog to the cloud backend."""
-        if self._sio.connected:
+        try:
             await self._sio.emit(
                 "agent:cameras:sync",
                 {"cameras": cameras},
                 namespace="/agent",
             )
             logger.info("Pushed %d local cameras to cloud backend", len(cameras))
+        except Exception as error:
+            logger.error("Failed to push cameras to cloud backend: %s", error)
 
     async def request_camera_sync(self) -> None:
         """Emits a request to the backend for an immediate camera sync."""
-        if self._sio.connected:
+        try:
             await self._sio.emit("cameras:request_sync", namespace="/agent")
+        except Exception as error:
+            logger.error("Failed to emit cameras:request_sync: %s", error)
 
     async def run_heartbeat_loop(self, shutdown_requested: asyncio.Event) -> None:
-        """Periodically emits heartbeats until shutdown is requested."""
+        """Periodically emits heartbeats and keeps camera catalog refreshed."""
         interval = self._settings.agent.heartbeat_interval_seconds
         while not shutdown_requested.is_set():
             try:
@@ -176,7 +189,7 @@ class CloudConnector:
             if shutdown_requested.is_set():
                 break
 
-            if not self._sio.connected:
+            if not self._sio.connected and not self._is_connected:
                 try:
                     logger.info(
                         "Reconnecting to cloud backend at %s...", self._settings.agent.backend_url
@@ -190,7 +203,7 @@ class CloudConnector:
                 except Exception as error:
                     logger.debug("Reconnection attempt failed: %s", error)
 
-            if self._sio.connected:
+            if self._sio.connected or self._is_connected:
                 try:
                     payload = {
                         "name": self._settings.agent.agent_name,
@@ -198,8 +211,11 @@ class CloudConnector:
                     }
                     await self._sio.emit("agent:heartbeat", payload, namespace="/agent")
                     logger.debug("Sent heartbeat to cloud backend")
+                    # Refresh cameras on each heartbeat so cloud in-memory store remains current
+                    if self._on_connected is not None:
+                        await self._on_connected()
                 except Exception as error:
-                    logger.debug("Failed to send heartbeat: %s", error)
+                    logger.debug("Failed during heartbeat sync: %s", error)
 
     async def disconnect(self) -> None:
         """Gracefully disconnects from the backend."""
