@@ -117,22 +117,37 @@ class CloudConnector:
         self._sio.on("agent:camera:stop", on_camera_stop_event, namespace="/agent")
         self._sio.on("agent:heartbeat:ack", on_heartbeat_ack, namespace="/agent")
 
-    async def connect(self) -> None:
+    async def connect(self, max_retries: int = 5, retry_delay: float = 2.0) -> None:
         """Connects to the cloud backend at /agent with authentication token."""
         auth = {"token": self._settings.agent.agent_token}
         url = self._settings.agent.backend_url.rstrip("/")
         logger.info("Connecting to cloud backend at %s...", url)
-        try:
-            await self._sio.connect(
-                url,
-                namespaces=["/agent"],
-                auth=auth,
-                transports=["websocket", "polling"],
-            )
-        except Exception as error:
-            logger.warning(
-                "Initial connection to %s failed (%s); will retry in background", url, error
-            )
+        delay = retry_delay
+        for attempt in range(1, max_retries + 1):
+            try:
+                await self._sio.connect(
+                    url,
+                    namespaces=["/agent"],
+                    auth=auth,
+                    transports=["websocket", "polling"],
+                )
+                logger.info("Successfully connected to cloud backend at %s", url)
+                return
+            except Exception as error:
+                if attempt == max_retries:
+                    logger.warning(
+                        "Connection to %s failed after %d attempts: %s", url, attempt, error
+                    )
+                else:
+                    logger.info(
+                        "Connection attempt %d to %s failed (%s); retrying in %.1fs...",
+                        attempt,
+                        url,
+                        error,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, 30.0)
 
     async def push_cameras_sync(self, cameras: list[dict[str, Any]]) -> None:
         """Pushes the local camera catalog to the cloud backend."""
@@ -160,6 +175,20 @@ class CloudConnector:
 
             if shutdown_requested.is_set():
                 break
+
+            if not self._sio.connected:
+                try:
+                    logger.info(
+                        "Reconnecting to cloud backend at %s...", self._settings.agent.backend_url
+                    )
+                    await self._sio.connect(
+                        self._settings.agent.backend_url.rstrip("/"),
+                        namespaces=["/agent"],
+                        auth={"token": self._settings.agent.agent_token},
+                        transports=["websocket", "polling"],
+                    )
+                except Exception as error:
+                    logger.debug("Reconnection attempt failed: %s", error)
 
             if self._sio.connected:
                 try:
