@@ -122,6 +122,61 @@ def _setup_watchlist_sync(
     return watchlist_reconciler
 
 
+def _build_cloud_connector(
+    settings: Settings,
+    reconciler: CameraSyncReconciler,
+) -> CloudConnector:
+    """Builds CloudConnector instance with registered event hooks."""
+    connector_holder: list[CloudConnector] = []
+
+    async def on_cameras_sync(cameras: list[dict[str, Any]]) -> None:
+        logger.info("Reconciling %d cameras with local Specter engine", len(cameras))
+        if not cameras:
+            logger.info("Ignoring empty camera sync payload to preserve local cameras")
+            return
+        await reconciler.reconcile(cameras)
+
+    async def on_cameras_updated(data: dict[str, Any]) -> None:
+        logger.info("Camera change detected in cloud: %s; requesting sync", data)
+        if connector_holder:
+            await connector_holder[0].request_camera_sync()
+
+    async def on_connected() -> None:
+        logger.info("Connected to cloud backend; pushing local cameras catalog")
+        if connector_holder:
+            await reconciler.push_local_cameras(connector_holder[0])
+
+    connector = CloudConnector(
+        settings=settings,
+        on_cameras_sync=on_cameras_sync,
+        on_cameras_updated=on_cameras_updated,
+        on_connected=on_connected,
+    )
+    connector_holder.append(connector)
+    return connector
+
+
+async def _run_periodic_camera_sync(
+    connector: CloudConnector,
+    reconciler: CameraSyncReconciler,
+    shutdown_ev: asyncio.Event,
+) -> None:
+    """Periodically pushes local camera catalog to keep cloud state synchronized."""
+    while not shutdown_ev.is_set():
+        try:
+            for _ in range(30):
+                if shutdown_ev.is_set():
+                    return
+                await asyncio.sleep(1)
+            if connector.sio.connected:
+                logger.debug("Pushing local camera catalog (periodic sync)")
+                await reconciler.push_local_cameras(connector)
+        except asyncio.CancelledError:
+            break
+        except Exception as err:
+            logger.warning("Periodic camera sync error: %s", err)
+
+
 async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     """Runs the Specter edge agent process until shutdown is requested."""
     logger.info(
@@ -142,35 +197,7 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     offline_queue = OfflineQueue(queue_db_path)
     message_bus = await _connect_message_bus(settings.services.nats_url)
 
-    connector: CloudConnector | None = None
-
-    async def on_cameras_sync(cameras: list[dict[str, Any]]) -> None:
-        """Handles incoming cameras sync payload from backend."""
-        logger.info("Reconciling %d cameras with local Specter engine", len(cameras))
-        if not cameras:
-            logger.info("Ignoring empty camera sync payload to preserve local cameras")
-            return
-        await reconciler.reconcile(cameras)
-
-    async def on_cameras_updated(data: dict[str, Any]) -> None:
-        """Handles incremental camera update notification by requesting fresh sync."""
-        logger.info("Camera change detected in cloud: %s; requesting sync", data)
-        if connector is not None:
-            await connector.request_camera_sync()
-
-    async def on_connected() -> None:
-        """Pushes the local camera catalog upon connection to the cloud backend."""
-        logger.info("Connected to cloud backend; pushing local cameras catalog")
-        if connector is not None:
-            await reconciler.push_local_cameras(connector)
-
-    connector = CloudConnector(
-        settings=settings,
-        on_cameras_sync=on_cameras_sync,
-        on_cameras_updated=on_cameras_updated,
-        on_connected=on_connected,
-    )
-
+    connector = _build_cloud_connector(settings, reconciler)
     _register_camera_handlers(connector, reconciler)
     await _subscribe_camera_status_forwarder(message_bus, connector)
 
@@ -196,6 +223,9 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     # Launch background tasks
     heartbeat_task = asyncio.create_task(connector.run_heartbeat_loop(shutdown_requested))
     forwarder_task = asyncio.create_task(alert_forwarder.run(shutdown_requested))
+    sync_task = asyncio.create_task(
+        _run_periodic_camera_sync(connector, reconciler, shutdown_requested)
+    )
 
     try:
         await shutdown_requested.wait()
@@ -203,7 +233,8 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         logger.info("Shutting down Specter edge agent...")
         heartbeat_task.cancel()
         forwarder_task.cancel()
-        await asyncio.gather(heartbeat_task, forwarder_task, return_exceptions=True)
+        sync_task.cancel()
+        await asyncio.gather(heartbeat_task, forwarder_task, sync_task, return_exceptions=True)
         await webrtc_relay.close()
         await connector.disconnect()
         await message_bus.close()
