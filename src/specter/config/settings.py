@@ -177,6 +177,26 @@ class AgentSettings(_StrictModel):
             {"urls": "stun:stun.cloudflare.com:3478"},
         ]
     )
+    cloudflare_turn_url: str = "turn:turn.cloudflare.com:3478"
+    cloudflare_turn_key_id: str = ""
+    cloudflare_turn_api_token: str = ""
+
+    def get_effective_ice_servers(self) -> list[dict[str, Any]]:
+        """Returns configured ICE servers, including Cloudflare TURN if credentials exist."""
+        if self.cloudflare_turn_key_id and self.cloudflare_turn_api_token:
+            return [
+                {"urls": ["stun:turn.cloudflare.com:3478", "stun:stun.cloudflare.com:3478"]},
+                {
+                    "urls": [
+                        f"{self.cloudflare_turn_url}?transport=udp",
+                        f"{self.cloudflare_turn_url}?transport=tcp",
+                        "turns:turn.cloudflare.com:5349?transport=tcp",
+                    ],
+                    "username": self.cloudflare_turn_key_id,
+                    "credential": self.cloudflare_turn_api_token,
+                },
+            ]
+        return self.ice_servers
 
 
 class Settings(BaseSettings):
