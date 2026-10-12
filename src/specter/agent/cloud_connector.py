@@ -20,11 +20,13 @@ class CloudConnector:
         settings: Settings,
         on_cameras_sync: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
         on_cameras_updated: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_connected: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Initializes the cloud connector with settings and event callbacks."""
         self._settings = settings
         self._on_cameras_sync = on_cameras_sync
         self._on_cameras_updated = on_cameras_updated
+        self._on_connected = on_connected
         self._sio = socketio.AsyncClient(
             reconnection=True,
             reconnection_attempts=0,  # retry indefinitely
@@ -53,6 +55,11 @@ class CloudConnector:
                 "Connected to cloud backend at %s (/agent namespace)",
                 self._settings.agent.backend_url,
             )
+            if self._on_connected is not None:
+                try:
+                    await self._on_connected()
+                except Exception as error:
+                    logger.error("Error in on_connected callback: %s", error)
 
         async def on_disconnect() -> None:
             self._is_connected = False
@@ -76,12 +83,22 @@ class CloudConnector:
         async def on_heartbeat_ack(data: dict[str, Any]) -> None:
             logger.debug("Received heartbeat ack: %s", data)
 
+        async def on_request_cameras_push(data: Any = None) -> None:
+            logger.info("Received cloud request to push cameras catalog: %s", data)
+            if self._on_connected is not None:
+                try:
+                    await self._on_connected()
+                except Exception as error:
+                    logger.error("Error responding to camera push request: %s", error)
+
         self._sio.on("connect", on_connect, namespace="/agent")
         self._sio.on("disconnect", on_disconnect, namespace="/agent")
         self._sio.on("connect_error", on_connect_error, namespace="/agent")
         self._sio.on("cameras:sync", on_cameras_sync_event, namespace="/agent")
         self._sio.on("cameras:updated", on_cameras_updated_event, namespace="/agent")
         self._sio.on("agent:heartbeat:ack", on_heartbeat_ack, namespace="/agent")
+        self._sio.on("agent:cameras:request_push", on_request_cameras_push, namespace="/agent")
+        self._sio.on("cameras:request_sync", on_request_cameras_push, namespace="/agent")
 
     async def connect(self) -> None:
         """Connects to the cloud backend at /agent with authentication token."""

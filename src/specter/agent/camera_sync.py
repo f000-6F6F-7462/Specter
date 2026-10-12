@@ -17,10 +17,12 @@ class CameraSyncReconciler:
         owner_id: str,
         api_token: str,
         http_client: httpx.AsyncClient | None = None,
+        local_owner_id: str | None = None,
     ) -> None:
         """Initializes the camera reconciler with connection parameters."""
         self._specter_api_url = specter_api_url.rstrip("/")
         self._owner_id = owner_id
+        self._local_owner_id = local_owner_id or owner_id
         self._api_token = api_token
         self._http_client = http_client
 
@@ -40,7 +42,7 @@ class CameraSyncReconciler:
 
     async def fetch_local_cameras(self) -> list[dict[str, Any]]:
         """Fetches the list of cameras currently configured in the local Specter engine."""
-        url = f"{self._specter_api_url}/owners/{self._owner_id}/cameras"
+        url = f"{self._specter_api_url}/owners/{self._local_owner_id}/cameras"
         client = await self._get_client()
         should_close = self._http_client is None
         try:
@@ -48,6 +50,76 @@ class CameraSyncReconciler:
             response.raise_for_status()
             result: list[dict[str, Any]] = response.json()
             return result
+        finally:
+            if should_close:
+                await client.aclose()
+
+    async def push_local_cameras(self, connector: Any) -> list[dict[str, Any]]:
+        """Pushes the local cameras catalog to the cloud backend over Socket.IO."""
+        try:
+            local_cameras = await self.fetch_local_cameras()
+        except Exception as error:
+            logger.error("Failed to fetch local cameras for push: %s", error)
+            return []
+
+        mapped: list[dict[str, Any]] = []
+        for cam in local_cameras:
+            meta = (
+                cam.get("metadata", {}).get("fa", {})
+                if isinstance(cam.get("metadata"), dict)
+                else {}
+            )
+            mapped.append(
+                {
+                    "id": cam["id"],
+                    "name": cam["name"],
+                    "source_url": cam["source_url"],
+                    "username": cam.get("username"),
+                    "has_password": cam.get("has_password", False),
+                    "location": meta.get("location"),
+                    "created_by": meta.get("created_by") or self._owner_id,
+                    "watchlist_ids": cam.get("watchlist_ids", []),
+                    "detection_classes": cam.get("detection_classes", []),
+                    "is_enabled": cam.get("is_enabled", True),
+                    "desired_state": cam.get("desired_state", "stopped"),
+                    "live_status": cam.get("live_status"),
+                }
+            )
+
+        logger.info("Pushing %d local cameras to cloud backend", len(mapped))
+        await connector.sio.emit("agent:cameras:sync", {"cameras": mapped}, namespace="/agent")
+        return mapped
+
+    async def start_local_camera(self, camera_id: str) -> bool:
+        """Requests the local Specter engine to start a camera."""
+        url = f"{self._specter_api_url}/owners/{self._local_owner_id}/cameras/{camera_id}/start"
+        client = await self._get_client()
+        should_close = self._http_client is None
+        try:
+            response = await client.post(url, headers=self._headers)
+            response.raise_for_status()
+            logger.info("Started local camera %s successfully", camera_id)
+            return True
+        except Exception as error:
+            logger.error("Failed to start local camera %s: %s", camera_id, error)
+            return False
+        finally:
+            if should_close:
+                await client.aclose()
+
+    async def stop_local_camera(self, camera_id: str) -> bool:
+        """Requests the local Specter engine to stop a camera."""
+        url = f"{self._specter_api_url}/owners/{self._local_owner_id}/cameras/{camera_id}/stop"
+        client = await self._get_client()
+        should_close = self._http_client is None
+        try:
+            response = await client.post(url, headers=self._headers)
+            response.raise_for_status()
+            logger.info("Stopped local camera %s successfully", camera_id)
+            return True
+        except Exception as error:
+            logger.error("Failed to stop local camera %s: %s", camera_id, error)
+            return False
         finally:
             if should_close:
                 await client.aclose()
@@ -119,7 +191,7 @@ class CameraSyncReconciler:
         self, client: httpx.AsyncClient, cloud_cam: dict[str, Any]
     ) -> None:
         """Creates a camera on the local Specter engine and starts it if desired."""
-        url = f"{self._specter_api_url}/owners/{self._owner_id}/cameras"
+        url = f"{self._specter_api_url}/owners/{self._local_owner_id}/cameras"
         body = {
             "name": cloud_cam.get("name"),
             "source_url": cloud_cam.get("source_url"),
@@ -137,9 +209,8 @@ class CameraSyncReconciler:
             logger.info("Created local camera '%s' (id: %s)", body["name"], camera_id)
 
             if cloud_cam.get("desired_state") == "running" and camera_id:
-                start_url = (
-                    f"{self._specter_api_url}/owners/{self._owner_id}/cameras/{camera_id}/start"
-                )
+                owner = self._local_owner_id
+                start_url = f"{self._specter_api_url}/owners/{owner}/cameras/{camera_id}/start"
                 start_response = await client.post(start_url, headers=self._headers)
                 start_response.raise_for_status()
                 logger.info("Started local camera (id: %s)", camera_id)
@@ -172,7 +243,7 @@ class CameraSyncReconciler:
 
         is_modified = False
         if changes:
-            patch_url = f"{self._specter_api_url}/owners/{self._owner_id}/cameras/{camera_id}"
+            patch_url = f"{self._specter_api_url}/owners/{self._local_owner_id}/cameras/{camera_id}"
             try:
                 response = await client.patch(patch_url, json=changes, headers=self._headers)
                 response.raise_for_status()
@@ -186,9 +257,8 @@ class CameraSyncReconciler:
         current_state = local_cam.get("desired_state")
         if desired_state and desired_state != current_state:
             action = "start" if desired_state == "running" else "stop"
-            action_url = (
-                f"{self._specter_api_url}/owners/{self._owner_id}/cameras/{camera_id}/{action}"
-            )
+            owner = self._local_owner_id
+            action_url = f"{self._specter_api_url}/owners/{owner}/cameras/{camera_id}/{action}"
             try:
                 response = await client.post(action_url, headers=self._headers)
                 response.raise_for_status()
@@ -205,13 +275,17 @@ class CameraSyncReconciler:
         """Stops and deletes a camera from the local Specter engine."""
         try:
             # First stop if running
-            stop_url = f"{self._specter_api_url}/owners/{self._owner_id}/cameras/{camera_id}/stop"
+            stop_url = (
+                f"{self._specter_api_url}/owners/{self._local_owner_id}/cameras/{camera_id}/stop"
+            )
             await client.post(stop_url, headers=self._headers)
         except Exception as error:
             logger.debug("Camera stop during deletion ignored: %s", error)
 
         try:
-            delete_url = f"{self._specter_api_url}/owners/{self._owner_id}/cameras/{camera_id}"
+            delete_url = (
+                f"{self._specter_api_url}/owners/{self._local_owner_id}/cameras/{camera_id}"
+            )
             response = await client.delete(delete_url, headers=self._headers)
             response.raise_for_status()
             logger.info("Deleted local camera %s", camera_id)

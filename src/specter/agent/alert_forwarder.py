@@ -10,7 +10,7 @@ from typing import Any
 from specter.agent.cloud_connector import CloudConnector
 from specter.agent.offline_queue import OfflineQueue
 from specter.messaging.message_bus import MessageBus
-from specter.messaging.subjects import SUBJECT_WILDCARD, CameraEvent, build_camera_subject
+from specter.messaging.subjects import CameraEvent, build_all_cameras_subject
 
 logger = logging.getLogger(__name__)
 
@@ -135,12 +135,8 @@ class AlertForwarder:
     async def run(self, shutdown_requested: asyncio.Event) -> None:
         """Subscribes to NATS alert events and runs the queue drain loop until shutdown."""
         # 1. Subscribe to match_confirmed and rule_triggered events
-        match_subject = build_camera_subject(
-            self._owner_id, SUBJECT_WILDCARD, CameraEvent.MATCH_CONFIRMED
-        )
-        rule_subject = build_camera_subject(
-            self._owner_id, SUBJECT_WILDCARD, CameraEvent.RULE_TRIGGERED
-        )
+        match_subject = build_all_cameras_subject(CameraEvent.MATCH_CONFIRMED)
+        rule_subject = build_all_cameras_subject(CameraEvent.RULE_TRIGGERED)
 
         async def _on_match_message(raw_msg: Any) -> None:
             try:
