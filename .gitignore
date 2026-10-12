@@ -25,6 +25,7 @@ htmlcov/
 .env.local
 .env.*.local
 /deploy/secrets/
+DO NOT EXPOSE*
 
 /config/specter.yaml
 /agent/config.json
