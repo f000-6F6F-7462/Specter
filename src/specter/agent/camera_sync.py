@@ -243,4 +243,3 @@ class CameraSyncReconciler:
         finally:
             if should_close:
                 await client.aclose()
-

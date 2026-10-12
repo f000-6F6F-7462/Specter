@@ -54,6 +54,12 @@ class WebRtcRelay:
         Returns:
             SDP answer string if successful, None otherwise.
         """
+        logger.info(
+            "Processing WebRTC offer for camera %s (correlation %s, client %s)",
+            camera_id,
+            correlation_id,
+            client_socket_id,
+        )
         url = f"{self._specter_api_url}/owners/{self._owner_id}/cameras/{camera_id}/live/webrtc"
         headers = {
             "Content-Type": SDP_MEDIA_TYPE,
@@ -67,6 +73,15 @@ class WebRtcRelay:
                 content=sdp_offer.encode("utf-8"),
                 headers=headers,
             )
+            if response.status_code == httpx.codes.NOT_FOUND and self._owner_id != "facealert":
+                fallback_url = (
+                    f"{self._specter_api_url}/owners/facealert/cameras/{camera_id}/live/webrtc"
+                )
+                response = await self._client.post(
+                    fallback_url,
+                    content=sdp_offer.encode("utf-8"),
+                    headers=headers,
+                )
             response.raise_for_status()
             answer_sdp = response.text
 
