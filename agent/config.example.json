@@ -1,6 +1,8 @@
 {
   "owner_id": "local_agent",
+  "agent_name": "Site A — Main Building",
   "api_token_file": "deploy/secrets/api.token",
+  "cloud_token_file": "deploy/secrets/agent.token",
   "cameras": [
     {
       "name": "Front door",

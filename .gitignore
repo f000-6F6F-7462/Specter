@@ -27,6 +27,7 @@ htmlcov/
 /deploy/secrets/
 
 /config/specter.yaml
+/agent/config.json
 
 # Runtime artifacts (not source)
 /data/

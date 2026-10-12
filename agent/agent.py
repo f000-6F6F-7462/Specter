@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,7 +33,9 @@ class AgentConfig:
     """Configuration required to connect to a local Specter API."""
 
     owner_id: str
+    agent_name: str
     api_token_file: Path
+    cloud_token_file: Path
     cameras: list[CameraConfig]
 
 
@@ -46,12 +49,16 @@ def load_config(path: Path) -> AgentConfig:
     if not isinstance(raw, dict):
         raise AgentError("configuration must be a JSON object")
     owner_id = raw.get("owner_id")
+    agent_name = raw.get("agent_name", "Specter Edge Agent")
     token_file = raw.get("api_token_file")
+    cloud_token_file = raw.get("cloud_token_file", token_file)
     raw_cameras = raw.get("cameras")
     if not isinstance(owner_id, str) or not owner_id:
         raise AgentError("owner_id must be a non-empty string")
     if not isinstance(token_file, str) or not token_file:
         raise AgentError("api_token_file must be a non-empty string")
+    if not isinstance(cloud_token_file, str) or not cloud_token_file:
+        raise AgentError("cloud_token_file must be a non-empty string")
     if not isinstance(raw_cameras, list) or not raw_cameras:
         raise AgentError("cameras must contain at least one camera")
 
@@ -85,7 +92,7 @@ def load_config(path: Path) -> AgentConfig:
                 detection_classes=detection_classes,
             )
         )
-    return AgentConfig(owner_id, Path(token_file), cameras)
+    return AgentConfig(owner_id, agent_name, Path(token_file), Path(cloud_token_file), cameras)
 
 
 class SpecterAgent:
@@ -94,17 +101,22 @@ class SpecterAgent:
     def __init__(self, config: AgentConfig, api_url: str) -> None:
         self.config = config
         self.api_url = api_url.rstrip("/")
-        try:
-            token = config.api_token_file.read_text(encoding="utf-8").strip()
-        except OSError as error:
-            raise AgentError(f"cannot read API token file: {error}") from error
-        if not token:
-            raise AgentError("API token file is empty")
+        token = self._read_token(config.api_token_file, "API")
         self.client = httpx.Client(
             base_url=self.api_url,
             headers={"Authorization": f"Bearer {token}"},
             timeout=15,
         )
+
+    @staticmethod
+    def _read_token(path: Path, description: str) -> str:
+        try:
+            token = path.read_text(encoding="utf-8").strip()
+        except OSError as error:
+            raise AgentError(f"cannot read {description} token file: {error}") from error
+        if not token:
+            raise AgentError(f"{description} token file is empty")
+        return token
 
     def close(self) -> None:
         """Close the HTTP client."""
@@ -197,7 +209,8 @@ class SpecterAgent:
     def heartbeat(self) -> None:
         """Report this agent and its configured camera names to the cloud."""
         payload = {
-            "version": "0.1.0",
+            "name": self.config.agent_name,
+            "version": "0.2.0",
             "cameras": [{"name": camera.name, "status": "unknown"} for camera in self.config.cameras],
         }
         response = self.request("POST", "/api/agent/heartbeat", json=payload)
@@ -205,14 +218,233 @@ class SpecterAgent:
             raise AgentError("cloud heartbeat returned an invalid response")
         print("Cloud heartbeat accepted")
 
+    def connect(self, interval_seconds: float) -> None:
+        """Keep the agent registered with the cloud until interrupted."""
+        if interval_seconds <= 0:
+            raise AgentError("heartbeat interval must be greater than zero")
+
+        delay = 1.0
+        while True:
+            try:
+                self.heartbeat()
+            except AgentError as error:
+                print(f"specter-agent: cloud connection failed: {error}", file=sys.stderr)
+                print(f"Retrying in {delay:.0f}s", file=sys.stderr)
+                time.sleep(delay)
+                delay = min(delay * 2, 60.0)
+                continue
+
+            delay = 1.0
+            time.sleep(interval_seconds)
+
+    def socket_connect(self, interval_seconds: float, cloud_url: str) -> None:
+        """Maintain an authenticated Socket.IO connection to the production Agent API."""
+        if interval_seconds <= 0:
+            raise AgentError("heartbeat interval must be greater than zero")
+        try:
+            import socketio
+        except ImportError as error:
+            raise AgentError(
+                "Socket.IO support is unavailable; install the agent dependencies first"
+            ) from error
+
+        cloud_token = self._read_token(self.config.cloud_token_file, "cloud Agent")
+        client = socketio.Client(reconnection=False, logger=False, engineio_logger=False)
+        namespace = "/agent"
+        connected = False
+
+        @client.event(namespace=namespace)
+        def connect() -> None:
+            nonlocal connected
+            connected = True
+            client.emit(
+                "agent:heartbeat",
+                {"name": self.config.agent_name, "version": "0.2.0"},
+                namespace=namespace,
+            )
+            client.emit(
+                "agent:cameras:sync",
+                {"cameras": self.cameras()},
+                namespace=namespace,
+            )
+            client.emit("cameras:request_sync", namespace=namespace)
+            client.emit("watchlists:request_sync", namespace=namespace)
+            print("Cloud Socket.IO connection accepted")
+
+        @client.event(namespace=namespace)
+        def disconnect() -> None:
+            nonlocal connected
+            connected = False
+            print("Cloud Socket.IO connection closed", file=sys.stderr)
+
+        @client.on("cameras:sync", namespace=namespace)
+        def cameras_sync(payload: Any) -> None:
+            if not isinstance(payload, dict) or not isinstance(payload.get("cameras"), list):
+                print("specter-agent: received invalid camera sync", file=sys.stderr)
+                return
+            self._sync_cloud_cameras(payload["cameras"])
+
+        @client.on("agent:heartbeat:ack", namespace=namespace)
+        def heartbeat_ack(_payload: Any) -> None:
+            print("Cloud heartbeat accepted")
+
+        @client.on("cameras:updated", namespace=namespace)
+        def cameras_updated(payload: Any) -> None:
+            if not isinstance(payload, dict):
+                return
+            kind = payload.get("change_kind")
+            camera = payload.get("camera", {})
+            camera_id = payload.get("camera_id", "")
+            if kind == "created" and isinstance(camera, dict):
+                name = camera.get("name", "")
+                source_url = camera.get("source_url", "")
+                if name and source_url:
+                    try:
+                        self.request(
+                            "POST",
+                            f"/owners/{self.config.owner_id}/cameras",
+                            json={
+                                "name": name,
+                                "source_url": source_url,
+                                "credentials": camera.get("credentials"),
+                                "detection_classes": camera.get("detection_classes", []),
+                            },
+                        )
+                        print(f"Cloud camera created locally: {name}")
+                    except AgentError as error:
+                        print(f"specter-agent: failed to create cloud camera: {error}", file=sys.stderr)
+            elif kind == "updated" and isinstance(camera, dict) and camera_id:
+                try:
+                    self.request(
+                        "PATCH",
+                        f"/owners/{self.config.owner_id}/cameras/{camera_id}",
+                        json={k: v for k, v in camera.items() if k not in ("id", "name")},
+                    )
+                    print(f"Cloud camera updated locally: {camera_id}")
+                except AgentError as error:
+                    print(f"specter-agent: failed to update cloud camera: {error}", file=sys.stderr)
+            elif kind == "deleted" and camera_id:
+                try:
+                    self.request(
+                        "POST",
+                        f"/owners/{self.config.owner_id}/cameras/{camera_id}/stop",
+                    )
+                except AgentError:
+                    pass
+                try:
+                    self.request(
+                        "DELETE",
+                        f"/owners/{self.config.owner_id}/cameras/{camera_id}",
+                    )
+                    print(f"Cloud camera deleted locally: {camera_id}")
+                except AgentError as error:
+                    print(f"specter-agent: failed to delete cloud camera: {error}", file=sys.stderr)
+
+        @client.on("agent:camera:start", namespace=namespace)
+        def camera_start(payload: Any) -> None:
+            if not isinstance(payload, dict):
+                return
+            camera_id = payload.get("cameraId", "")
+            if camera_id:
+                try:
+                    self.request(
+                        "POST",
+                        f"/owners/{self.config.owner_id}/cameras/{camera_id}/start",
+                    )
+                    print(f"Cloud requested camera start: {camera_id}")
+                except AgentError as error:
+                    print(f"specter-agent: failed to start camera: {error}", file=sys.stderr)
+
+        @client.on("agent:camera:stop", namespace=namespace)
+        def camera_stop(payload: Any) -> None:
+            if not isinstance(payload, dict):
+                return
+            camera_id = payload.get("cameraId", "")
+            if camera_id:
+                try:
+                    self.request(
+                        "POST",
+                        f"/owners/{self.config.owner_id}/cameras/{camera_id}/stop",
+                    )
+                    print(f"Cloud requested camera stop: {camera_id}")
+                except AgentError as error:
+                    print(f"specter-agent: failed to stop camera: {error}", file=sys.stderr)
+
+        @client.on("error", namespace=namespace)
+        def socket_error(payload: Any) -> None:
+            print(f"specter-agent: cloud error: {payload}", file=sys.stderr)
+
+        delay = 1.0
+        while True:
+            try:
+                client.connect(
+                    cloud_url.rstrip("/"),
+                    auth={"token": cloud_token},
+                    namespaces=[namespace],
+                    transports=["websocket", "polling"],
+                )
+                delay = 1.0
+                while connected:
+                    client.emit(
+                        "agent:heartbeat",
+                        {"name": self.config.agent_name, "version": "0.2.0"},
+                        namespace=namespace,
+                    )
+                    time.sleep(interval_seconds)
+                client.disconnect()
+            except (socketio.exceptions.ConnectionError, OSError) as error:
+                print(f"specter-agent: cloud connection failed: {error}", file=sys.stderr)
+                print(f"Retrying in {delay:.0f}s", file=sys.stderr)
+                time.sleep(delay)
+                delay = min(delay * 2, 60.0)
+
+    def _sync_cloud_cameras(self, raw_cameras: list[Any]) -> None:
+        """Apply cloud camera definitions locally without deleting local cameras."""
+        local_cameras = self.cameras()
+        for raw_camera in raw_cameras:
+            if not isinstance(raw_camera, dict):
+                continue
+            name = raw_camera.get("name")
+            source_url = raw_camera.get("source_url")
+            if not isinstance(name, str) or not isinstance(source_url, str):
+                continue
+            body = {
+                "name": name,
+                "source_url": source_url,
+                "credentials": raw_camera.get("credentials"),
+                "detection_classes": raw_camera.get("detection_classes", []),
+            }
+            existing = next((camera for camera in local_cameras if camera.get("name") == name), None)
+            try:
+                if existing is None:
+                    self.request(
+                        "POST",
+                        f"/owners/{self.config.owner_id}/cameras",
+                        json=body,
+                    )
+                elif isinstance(existing.get("id"), str):
+                    self.request(
+                        "PATCH",
+                        f"/owners/{self.config.owner_id}/cameras/{existing['id']}",
+                        json={key: value for key, value in body.items() if key != "name"},
+                    )
+            except AgentError as error:
+                print(f"specter-agent: warning: skipping cloud camera {name!r}: {error}", file=sys.stderr)
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument(
+        "--heartbeat-interval",
+        type=float,
+        default=float(os.environ.get("SPECTER_AGENT_HEARTBEAT_INTERVAL", "30")),
+        help="seconds between cloud heartbeats for the connect command",
+    )
+    parser.add_argument(
         "command",
-        choices=("sync", "start", "status", "heartbeat"),
+        choices=("sync", "start", "status", "heartbeat", "connect", "socket-connect"),
         help="operation to perform",
     )
     return parser.parse_args()
@@ -226,7 +458,13 @@ def main() -> int:
         api_url = os.environ.get("SPECTER_AGENT_API_URL", "http://127.0.0.1:8000")
         agent = SpecterAgent(config, api_url)
         try:
-            getattr(agent, args.command)()
+            if args.command == "connect":
+                agent.connect(args.heartbeat_interval)
+            elif args.command == "socket-connect":
+                cloud_url = os.environ.get("SPECTER_AGENT_CLOUD_URL", "https://api.eyec.live")
+                agent.socket_connect(args.heartbeat_interval, cloud_url)
+            else:
+                getattr(agent, args.command)()
         finally:
             agent.close()
     except AgentError as error:
