@@ -2992,6 +2992,12 @@
             },
             "description": "Successful Response"
           },
+          "201": {
+            "content": {
+              "application/sdp": {}
+            },
+            "description": "Created"
+          },
           "422": {
             "content": {
               "application/json": {

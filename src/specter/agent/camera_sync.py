@@ -124,6 +124,14 @@ class CameraSyncReconciler:
             if should_close:
                 await client.aclose()
 
+    async def start_camera(self, camera_id: str) -> None:
+        """Starts a local camera."""
+        await self.start_local_camera(camera_id)
+
+    async def stop_camera(self, camera_id: str) -> None:
+        """Stops a local camera."""
+        await self.stop_local_camera(camera_id)
+
     async def reconcile(self, cloud_cameras: list[dict[str, Any]]) -> dict[str, int]:
         """Reconciles the local camera set against the desired state provided by the cloud backend.
 

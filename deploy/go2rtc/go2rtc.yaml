@@ -11,6 +11,8 @@ webrtc:
   # Set GO2RTC_WEBRTC_CANDIDATES in the environment (see compose.infra.yaml).
   candidates:
     - ${GO2RTC_WEBRTC_CANDIDATES}
+    - stun:stun.cloudflare.com:3478
+    - stun:turn.cloudflare.com:3478
 
 # Filled at runtime through the go2rtc API as cameras are added.
 streams: {}

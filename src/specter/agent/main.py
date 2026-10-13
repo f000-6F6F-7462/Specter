@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from specter.agent.alert_forwarder import AlertForwarder
@@ -29,35 +30,6 @@ def _resolve_api_token(settings: Settings) -> str:
         except OSError as error:
             logger.warning("Could not read API token file %s: %s", token_file, error)
     return ""
-
-
-def _register_camera_handlers(connector: CloudConnector, reconciler: CameraSyncReconciler) -> None:
-    """Registers handlers for camera start and stop commands received from cloud."""
-
-    async def on_camera_start(data: dict[str, Any]) -> None:
-        camera_id = data.get("cameraId", "")
-        logger.info("Received cloud command to start camera: %s", camera_id)
-        success = await reconciler.start_local_camera(camera_id)
-        if success:
-            await connector.sio.emit(
-                "agent:camera:status_changed",
-                {"cameraId": camera_id, "status": "starting"},
-                namespace="/agent",
-            )
-
-    async def on_camera_stop(data: dict[str, Any]) -> None:
-        camera_id = data.get("cameraId", "")
-        logger.info("Received cloud command to stop camera: %s", camera_id)
-        success = await reconciler.stop_local_camera(camera_id)
-        if success:
-            await connector.sio.emit(
-                "agent:camera:status_changed",
-                {"cameraId": camera_id, "status": "stopped"},
-                namespace="/agent",
-            )
-
-    connector.sio.on("agent:camera:start", on_camera_start, namespace="/agent")
-    connector.sio.on("agent:camera:stop", on_camera_stop, namespace="/agent")
 
 
 async def _subscribe_camera_status_forwarder(
@@ -107,7 +79,6 @@ def _setup_watchlist_sync(
     watchlist_reconciler = WatchlistSyncReconciler(
         specter_api_url=settings.agent.specter_api_url,
         owner_id=settings.agent.owner_id,
-        local_owner_id=settings.agent.local_owner_id,
         api_token=api_token,
         backend_url=settings.agent.backend_url,
         agent_token=settings.agent.agent_token,
@@ -144,13 +115,43 @@ def _build_cloud_connector(
     async def on_connected() -> None:
         logger.info("Connected to cloud backend; pushing local cameras catalog")
         if connector_holder:
-            await reconciler.push_local_cameras(connector_holder[0])
+            try:
+                await reconciler.push_local_cameras(connector_holder[0])
+                await connector_holder[0].request_camera_sync()
+            except Exception as error:
+                logger.warning("Failed to push camera sync on connect: %s", error)
+
+    async def on_camera_start(camera_id: str) -> None:
+        try:
+            success = await reconciler.start_local_camera(camera_id)
+            if success and connector_holder:
+                await connector_holder[0].sio.emit(
+                    "agent:camera:status_changed",
+                    {"cameraId": camera_id, "status": "starting"},
+                    namespace="/agent",
+                )
+        except Exception as error:
+            logger.error("Failed to start camera %s: %s", camera_id, error)
+
+    async def on_camera_stop(camera_id: str) -> None:
+        try:
+            success = await reconciler.stop_local_camera(camera_id)
+            if success and connector_holder:
+                await connector_holder[0].sio.emit(
+                    "agent:camera:status_changed",
+                    {"cameraId": camera_id, "status": "stopped"},
+                    namespace="/agent",
+                )
+        except Exception as error:
+            logger.error("Failed to stop camera %s: %s", camera_id, error)
 
     connector = CloudConnector(
         settings=settings,
         on_cameras_sync=on_cameras_sync,
         on_cameras_updated=on_cameras_updated,
         on_connected=on_connected,
+        on_camera_start=on_camera_start,
+        on_camera_stop=on_camera_stop,
     )
     connector_holder.append(connector)
     return connector
@@ -193,12 +194,17 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         api_token=api_token,
     )
 
-    queue_db_path = settings.paths.data_directory / "agent_offline_queue.sqlite3"
+    queue_dir = settings.paths.data_directory
+    try:
+        queue_dir.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        queue_dir = Path.home() / ".specter"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+    queue_db_path = queue_dir / "agent_offline_queue.sqlite3"
     offline_queue = OfflineQueue(queue_db_path)
     message_bus = await _connect_message_bus(settings.services.nats_url)
 
     connector = _build_cloud_connector(settings, reconciler)
-    _register_camera_handlers(connector, reconciler)
     await _subscribe_camera_status_forwarder(message_bus, connector)
 
     alert_forwarder = AlertForwarder(
@@ -218,7 +224,7 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     webrtc_relay.register_handlers()
     _setup_watchlist_sync(connector, settings, api_token)
 
-    await connector.connect(shutdown_requested=shutdown_requested)
+    await connector.connect()
 
     # Launch background tasks
     heartbeat_task = asyncio.create_task(connector.run_heartbeat_loop(shutdown_requested))

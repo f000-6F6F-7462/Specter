@@ -99,7 +99,10 @@ async def read_hls_file(
 @router.post(
     "/webrtc",
     response_class=Response,
-    responses={200: {"content": {SDP_MEDIA_TYPE: {}}}},
+    responses={
+        200: {"content": {SDP_MEDIA_TYPE: {}}},
+        201: {"content": {SDP_MEDIA_TYPE: {}}},
+    },
 )
 async def negotiate_webrtc(
     owner_id: str,
@@ -120,7 +123,11 @@ async def negotiate_webrtc(
         content=offer.encode(),
         headers={"content-type": SDP_MEDIA_TYPE},
     )
-    return Response(content=go2rtc_response.content, media_type=SDP_MEDIA_TYPE)
+    return Response(
+        content=go2rtc_response.content,
+        media_type=SDP_MEDIA_TYPE,
+        status_code=go2rtc_response.status_code,
+    )
 
 
 @websocket_router.websocket("/mse")
@@ -225,7 +232,7 @@ async def request_go2rtc(
         )
     except httpx.HTTPError:
         raise ExternalServiceError("go2rtc cannot be reached") from None
-    if go2rtc_response.status_code != status.HTTP_200_OK:
+    if go2rtc_response.status_code not in (status.HTTP_200_OK, status.HTTP_201_CREATED):
         raise ExternalServiceError(
             f"go2rtc cannot serve live video now (status {go2rtc_response.status_code})"
         )

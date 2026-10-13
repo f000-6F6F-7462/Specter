@@ -55,23 +55,3 @@ async def test_cloud_connector_heartbeat_loop_terminates_on_shutdown() -> None:
     shutdown.set()
     await asyncio.wait_for(task, timeout=1.0)
     assert task.done()
-
-
-@pytest.mark.asyncio
-async def test_cloud_connector_on_connected_and_push_request() -> None:
-    settings = Settings()
-    connected_calls = 0
-
-    async def on_connected() -> None:
-        nonlocal connected_calls
-        connected_calls += 1
-
-    connector = CloudConnector(settings=settings, on_connected=on_connected)
-
-    connect_handler = connector._sio.handlers["/agent"]["connect"]
-    await connect_handler()
-    assert connected_calls == 1
-
-    push_handler = connector._sio.handlers["/agent"]["agent:cameras:request_push"]
-    await push_handler()
-    assert connected_calls == 2

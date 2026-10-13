@@ -10,7 +10,8 @@ def test_agent_settings_defaults() -> None:
     assert settings.mode == "local"
     assert settings.backend_url == "http://localhost:12113"
     assert settings.agent_token == ""
-    assert settings.owner_id == "specter"
+    assert settings.agent_name == "Specter Edge Agent"
+    assert settings.owner_id == "facealert"
     assert settings.local_owner_id == "facealert"
     assert settings.specter_api_url == "http://127.0.0.1:8000"
     assert settings.heartbeat_interval_seconds == 30.0

@@ -74,7 +74,10 @@ services:
       SPECTER_SECURITY__API_TOKEN_FILE: /run/secrets/specter_api_token
     volumes: *volumes
     # The same file is mounted into the application server, which never sees specter-secrets.
-    secrets: [specter_api_token]
+    secrets:
+      - source: specter_api_token
+        target: /run/secrets/specter_api_token
+        mode: 0444
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:

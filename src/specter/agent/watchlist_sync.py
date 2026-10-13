@@ -19,12 +19,10 @@ class WatchlistSyncReconciler:
         backend_url: str = "",
         agent_token: str = "",
         http_client: httpx.AsyncClient | None = None,
-        local_owner_id: str | None = None,
     ) -> None:
         """Initializes the watchlist reconciler with connection parameters."""
         self._specter_api_url = specter_api_url.rstrip("/")
         self._owner_id = owner_id
-        self._local_owner_id = local_owner_id or owner_id
         self._api_token = api_token
         self._backend_url = backend_url.rstrip("/")
         self._agent_token = agent_token
@@ -54,7 +52,7 @@ class WatchlistSyncReconciler:
 
     async def fetch_local_watchlists(self) -> list[dict[str, Any]]:
         """Fetches the list of watchlists currently in the local Specter engine."""
-        url = f"{self._specter_api_url}/owners/{self._local_owner_id}/watchlists"
+        url = f"{self._specter_api_url}/owners/{self._owner_id}/watchlists"
         client = await self._get_client()
         should_close = self._http_client is None
         try:
@@ -68,7 +66,7 @@ class WatchlistSyncReconciler:
 
     async def create_local_watchlist(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         """Creates a watchlist in the local Specter engine."""
-        url = f"{self._specter_api_url}/owners/{self._local_owner_id}/watchlists"
+        url = f"{self._specter_api_url}/owners/{self._owner_id}/watchlists"
         body = {
             "name": payload.get("name", ""),
             "target_type": payload.get("target_type", "person"),
