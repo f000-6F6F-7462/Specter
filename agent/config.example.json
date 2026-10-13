@@ -1,0 +1,16 @@
+{
+  "owner_id": "local_agent",
+  "agent_name": "Site A — Main Building",
+  "api_token_file": "deploy/secrets/api.token",
+  "cloud_token_file": "deploy/secrets/agent.token",
+  "cameras": [
+    {
+      "name": "Front door",
+      "source_url": "rtsp://192.168.1.20:554/stream1",
+      "credentials": null,
+      "detection_classes": [
+        "person"
+      ]
+    }
+  ]
+}

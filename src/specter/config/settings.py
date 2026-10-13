@@ -160,6 +160,47 @@ class LoggingSettings(_StrictModel):
     format: LogFormat = LogFormat.TEXT
 
 
+class AgentSettings(_StrictModel):
+    """Settings for connecting the edge agent to the cloud backend."""
+
+    mode: Literal["local", "cloud"] = "local"
+    backend_url: str = "http://localhost:12113"
+    agent_token: str = ""
+    agent_name: str = "Specter Edge Agent"
+    owner_id: str = "facealert"
+    local_owner_id: str = "facealert"
+    specter_api_url: str = "http://127.0.0.1:8000"
+    specter_api_token: str = ""
+    heartbeat_interval_seconds: float = Field(default=30.0, gt=0)
+    sync_interval_seconds: float = Field(default=30.0, gt=0)
+    sync_on_connect: bool = True
+    ice_servers: list[dict[str, Any]] = Field(
+        default_factory=lambda: [
+            {"urls": "stun:stun.cloudflare.com:3478"},
+        ]
+    )
+    cloudflare_turn_url: str = "turn:turn.cloudflare.com:3478"
+    cloudflare_turn_key_id: str = ""
+    cloudflare_turn_api_token: str = ""
+
+    def get_effective_ice_servers(self) -> list[dict[str, Any]]:
+        """Returns configured ICE servers, including Cloudflare TURN if credentials exist."""
+        if self.cloudflare_turn_key_id and self.cloudflare_turn_api_token:
+            return [
+                {"urls": ["stun:turn.cloudflare.com:3478", "stun:stun.cloudflare.com:3478"]},
+                {
+                    "urls": [
+                        f"{self.cloudflare_turn_url}?transport=udp",
+                        f"{self.cloudflare_turn_url}?transport=tcp",
+                        "turns:turn.cloudflare.com:5349?transport=tcp",
+                    ],
+                    "username": self.cloudflare_turn_key_id,
+                    "credential": self.cloudflare_turn_api_token,
+                },
+            ]
+        return self.ice_servers
+
+
 class Settings(BaseSettings):
     """All static settings of a Specter process."""
 
@@ -176,6 +217,7 @@ class Settings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    agent: AgentSettings = Field(default_factory=AgentSettings)
 
     @model_validator(mode="before")
     @classmethod
