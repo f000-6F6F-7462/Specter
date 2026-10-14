@@ -83,18 +83,25 @@ links resolve through your server.
 Only the **negotiation** goes through the API:
 
 - Send the browser's SDP offer as the request body with `Content-Type: application/sdp`.
-- The response body is the SDP answer, also `application/sdp`.
+- The response body is the SDP answer (`application/sdp`), returning status `200` or `201`.
+- **Automatic Camera Start:** If the camera is currently stopped (`desired_state` is `stopped`),
+  Specter automatically issues a start request during WebRTC negotiation so live viewing can begin
+  without needing a separate prior start call.
 
 The video then flows **directly between go2rtc and the viewer** on port **8555** (TCP and UDP),
 which the Docker Compose file publishes on all interfaces. Consequences:
 
 - The viewer's network must be able to reach the device on 8555. Viewers outside the local network
-  need that port forwarded or otherwise routed.
+  need that port forwarded or routed.
 - go2rtc advertises the addresses in `GO2RTC_WEBRTC_CANDIDATES` (default `stun:8555`, which
   discovers the public address and needs internet access). Inside Docker the device's own
   addresses are container addresses, so on a local network set it to the address viewers use,
   such as `GO2RTC_WEBRTC_CANDIDATES=192.168.1.50:8555`, in `.env`. This is a
   deployment decision, not something the API can do for you.
+- **Edge Agent WebRTC Relay:** In Edge Agent deployments (connecting to a cloud dashboard), WebRTC
+  signaling is relayed through the outbound Socket.IO connection (`webrtc:offer`, `webrtc:answer`,
+  `webrtc:candidate`). NAT traversal is handled via Cloudflare STUN (`stun:stun.cloudflare.com:3478`)
+  and Cloudflare TURN (`turn:turn.cloudflare.com:3478`) configured via `SPECTER_AGENT__CLOUDFLARE_TURN_*`.
 - Fall back to MSE or HLS when the WebRTC connection does not establish.
 
 ### 4. JPEG frame: `GET /frame.jpeg`

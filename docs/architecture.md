@@ -78,9 +78,12 @@ What matters for you:
 | `camera-manager` | `specter camera-manager` | Starts one `camera` process per camera that should run, restarts it if it dies or freezes, registers the camera's stream in go2rtc, publishes the camera's status, and **records every alert event into the database**. Also deletes old evidence. |
 | `camera` | `specter camera --camera-id <id>` | Reads one camera, decides which frames to analyze, tracks objects, applies rules, identifies people, and publishes alert events. The camera manager starts it; you never do. |
 | `detector` | `specter detector` | Serves the AI models to every camera process, and enrolls reference images (turns a photo into vectors). |
+| `agent` | `specter agent` | Connects the local Specter instance to a cloud backend as an edge agent (camera sync, watchlist sync, offline alert store-and-forward, and WebRTC relay). |
 
 The services next to them (`deploy/compose.infra.yaml`) all listen on `127.0.0.1`, except go2rtc's
-WebRTC media port (`8555`), which viewers on the network must be able to reach.
+WebRTC media port (`8555`), which viewers on the network must be able to reach. In edge agent mode
+(`deploy/compose.agent.yaml`), WebRTC signaling is relayed over Socket.IO and media is routed via
+Cloudflare STUN / TURN.
 
 ## 3. What happens to a frame
 
@@ -353,3 +356,4 @@ Paths are the same inside every container. In Docker they are volumes; from sour
 | AI models | `./models` at `/opt/specter/models` / `./models` |
 | Frames shared between camera processes and the detector | volume `specter-frames` (memory) at `/dev/shm` |
 | Message contracts (JSON Schema) | `contracts/jsonschema/` |
+| Offline alert queue (Edge Agent) | `agent_offline_queue.sqlite3` in volume `specter-data` at `/var/lib/specter` / `~/.specter` |

@@ -25,11 +25,14 @@ htmlcov/
 .env.local
 .env.*.local
 /deploy/secrets/
+DO NOT EXPOSE*
+repomix-output.xml
 # Self-signed certificate and private key that MediaMTX writes where it is started
 auto.crt
 auto.key
 
 /config/specter.yaml
+/agent/config.json
 
 # Runtime artifacts (not source)
 /data/

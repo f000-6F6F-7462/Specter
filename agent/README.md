@@ -1,16 +1,21 @@
 # Specter Agent
 
-The agent is a small local gateway for the first MVP. It keeps camera streams on the
-customer's network and synchronizes the configured cameras with a local Specter API.
+Specter provides edge agent capability in two forms:
 
-The agent can also connect to Production through the authenticated Socket.IO `/agent`
-namespace. This keeps the connection outbound and supports camera catalog synchronization.
+1. **Native Integrated Agent (`specter agent` / `src/specter/agent/`)**: The full production-grade
+   edge gateway included directly in Specter. It handles bidirectional camera sync, watchlist & target
+   sync for autonomous offline face identification, real-time alert forwarding with an offline SQLite
+   store-and-forward queue (`agent_offline_queue.sqlite3`), and WebRTC signaling relay with Cloudflare
+   TURN/STUN traversal. Run via `deploy/compose.agent.yaml` or `specter agent`.
+2. **Standalone Helper Script (`agent/agent.py`)**: A lightweight Python script used for testing,
+   manual camera sync, heartbeat verification, and exploratory agent workflows.
 
 ## Requirements
 
 - Python 3.12+
-- A running local Specter stack (`make engine-up`)
+- A running local Specter stack (`make engine-up` or `docker compose`)
 - A local API token created by the Specter stack
+- A cloud agent pairing token (from `POST /api/agents` on the cloud dashboard)
 
 ## Configure
 
@@ -72,3 +77,22 @@ Set `SPECTER_AGENT_CLOUD_URL` to use a different Dashboard URL. The default is
 The default heartbeat interval is 30 seconds. Set `SPECTER_AGENT_HEARTBEAT_INTERVAL`
 or pass `--heartbeat-interval` to change it. The Agent retries failed connections with
 exponential backoff and stops with `Ctrl+C`.
+## Running the Native Integrated Specter Agent
+
+For full production features (automated NATS alert ingestion, persistent SQLite queue, WebRTC relay with STUN/TURN, and watchlist sync), run the integrated `specter agent`:
+
+From source:
+```bash
+SPECTER_AGENT__MODE=cloud \
+SPECTER_AGENT__BACKEND_URL=https://api.eyec.live \
+SPECTER_AGENT__AGENT_TOKEN=<your-agent-token> \
+uv run --env-file .env specter --config config/specter.dev.yaml agent
+```
+
+With Docker Compose:
+```bash
+docker compose --env-file .env \
+  -f deploy/compose.infra.yaml \
+  -f deploy/compose.specter.yaml \
+  -f deploy/compose.agent.yaml up -d
+```

@@ -21,6 +21,16 @@ The Compose files, used together:
 | [`deploy/compose.infra.yaml`](../deploy/compose.infra.yaml) | NATS, Qdrant, go2rtc |
 | [`deploy/compose.specter.yaml`](../deploy/compose.specter.yaml) | `migrate`, `api`, `camera-manager`, `detector` |
 | [`deploy/compose.dashboard.yaml`](../deploy/compose.dashboard.yaml) | `dashboard` (fa-server serving fa-client), `make up` only |
+| [`deploy/compose.agent.yaml`](../deploy/compose.agent.yaml) | `agent` (Specter Edge Agent process, connects engine to cloud backend) |
+
+To run the edge agent alongside Specter:
+
+```bash
+docker compose --env-file .env \
+  -f deploy/compose.infra.yaml \
+  -f deploy/compose.specter.yaml \
+  -f deploy/compose.agent.yaml up -d
+```
 
 To work on Specter's code without rebuilding an image, run the processes from source instead with
 the `specter` CLI (see the [README](../README.md#run-it-locally)). Use one way or the other, not
@@ -31,11 +41,12 @@ both at once: they use the same ports.
 ```mermaid
 flowchart TB
     subgraph host["The device"]
-        subgraph specter["Specter image (one image, three commands)"]
+        subgraph specter["Specter image (one image, five commands)"]
             MIG["migrate<br/><i>runs once, then exits</i>"]
             API["api<br/>:8000"]
             CM["camera-manager<br/>+ one camera process per camera"]
             DET["detector"]
+            AG["agent<br/><i>(edge mode)</i>"]
         end
 
         subgraph services["Services"]
@@ -54,8 +65,10 @@ flowchart TB
     API --> V1 & V2
     CM --> V1 & V2 & V3
     DET --> V1 & V3 & M
+    AG --> V1
     CM -. "starts after" .-> MIG
     API -. "published to 127.0.0.1:8000" .-> OUT["Application server"]
+    AG == "Socket.IO + HTTPS" ==> CLOUD["Cloud Backend"]
 ```
 
 | Container | Command | Notes |
@@ -64,6 +77,7 @@ flowchart TB
 | `api` | `specter api` | Published on `127.0.0.1:8000` only. Health check: `GET /health`. |
 | `camera-manager` | `specter camera-manager` | Also runs every camera process, as its children. Has a 30 second stop time so cameras can stop cleanly. |
 | `detector` | `specter detector` | Loads the models when it starts, which takes a few seconds. |
+| `agent` | `specter agent` | (Optional, `compose.agent.yaml`) Connects to cloud backend, manages camera & watchlist sync, offline queue alert forwarder, and WebRTC relay. |
 | `nats`, `qdrant`, `go2rtc` | | From `compose.infra.yaml`. Published on `127.0.0.1`, except go2rtc's WebRTC port `8555`. |
 
 All Specter containers use `restart: unless-stopped`, so a crashed process comes back by itself, and
