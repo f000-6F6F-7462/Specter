@@ -355,7 +355,7 @@ started camera whose process is still connecting can pass this check and then fa
 | `GET` | `/frame.jpeg` | The latest frame, `image/jpeg`. |
 | `GET` | `/stream.m3u8` | HLS playlist. |
 | `GET` | `/hls/{file}` | HLS segments the playlist links to. |
-| `POST` | `/webrtc` | WebRTC negotiation: body is an SDP offer (`application/sdp`), reply is the SDP answer. |
+| `POST` | `/webrtc` | WebRTC negotiation: body is an SDP offer (`application/sdp`), reply is the SDP answer (`application/sdp`, status `200` or `201`). |
 | `WS` | `/mse` | Low-delay MSE stream over a WebSocket. **Not in `openapi.json`.** |
 
 ## Errors in practice

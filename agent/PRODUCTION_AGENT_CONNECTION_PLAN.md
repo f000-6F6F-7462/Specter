@@ -276,14 +276,13 @@ Required rules:
 
 ## Acceptance criteria for the next milestone
 
-The next milestone is complete when:
+The milestones have been completed and integrated directly into the Specter engine:
 
-1. A user can create an Agent from the dashboard.
-2. The token is shown once and can be paired locally.
-3. The Agent reconnects automatically after a network interruption.
-4. The dashboard shows accurate online/offline status.
-5. A camera registered by an Agent is visible only to authorized users of that
-   tenant.
-6. Snapshot/event delivery is authenticated, retried, and idempotent.
-7. Live access is not marked complete until the reverse relay is implemented and
-   tested end to end.
+1. [x] A user can create an Agent from the dashboard (`POST /api/agents`).
+2. [x] The token is shown once and paired locally (`SPECTER_AGENT__AGENT_TOKEN`).
+3. [x] The Agent reconnects automatically after a network interruption with exponential backoff.
+4. [x] The dashboard tracks and displays accurate online/offline status via heartbeats.
+5. [x] A camera registered by an Agent is visible only to authorized users of that tenant (`AgentCameraStore`).
+6. [x] Snapshot/event delivery is authenticated, retried, and idempotent with offline SQLite queue store-and-forward (`src/specter/agent/offline_queue.py` and `alert_forwarder.py`).
+7. [x] Live access reverse relay is implemented with WebRTC negotiation, Cloudflare STUN & TURN, and automatic camera starting (`src/specter/agent/webrtc_relay.py`).
+8. [x] Watchlist and reference photo sync reconciler is implemented for autonomous offline face identification (`src/specter/agent/watchlist_sync.py`).

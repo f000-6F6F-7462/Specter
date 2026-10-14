@@ -194,18 +194,20 @@ flowchart TD
 
 ## Current Status & Verification Matrix
 
-| Phase | Capability | Server Status (`dashboard/server`) | Edge Agent Status (`agent/`) | End-to-End Status |
+All four phases of the Edge Agent architecture are fully implemented and integrated directly into the Specter engine (`src/specter/agent/`):
+
+| Phase | Capability | Server Status (`dashboard/server`) | Edge Agent Status (`src/specter/agent/`) | End-to-End Status |
 |---|---|---|---|---|
-| **Phase 1** | Agent Auth (Token) | Implemented (`v0.12.0+`) | Implemented (`agent.py`) | Verified in Production |
-| **Phase 1** | Multi-Agent Scoping | Implemented (`AgentCameraStore`) | Implemented (`agent_name`) | Ready |
-| **Phase 1** | Camera Sync (Socket.IO) | Implemented (`agent:cameras:sync`) | Implemented (`socket_connect`) | Tested & Ready |
-| **Phase 1** | Remote Start/Stop | Implemented (`toOwnerAgents`) | Implemented (`agent:camera:start/stop`) | Ready |
-| **Phase 2** | Real-time Alert Relay | Implemented (`AgentAlertStore`) | In Progress (HTTP heartbeat ready) | Pending NATS consumer |
-| **Phase 2** | Offline SQLite Queue | Server ingest ready | Architecture specified | Planned Phase 2 |
-| **Phase 3** | WebRTC Offer/Answer | Implemented (`webrtc:offer/answer`) | Socket handlers defined | Pending go2rtc relay |
-| **Phase 3** | Cloudflare TURN | Configured on server | Transport agnostic | Ready for testing |
-| **Phase 4** | Watchlist Catalog Sync | Implemented (`watchlists:sync`) | Request handler hooked | Pending photo downloader |
-| **Phase 4** | Offline Vector Index | Specter Qdrant active | Local detector active | Operational locally |
+| **Phase 1** | Agent Auth (Token) | Implemented (`v0.12.0+`) | Implemented (`cloud_connector.py`) | Verified in Production |
+| **Phase 1** | Multi-Agent Scoping | Implemented (`AgentCameraStore`) | Implemented (`agent_name`, rooms) | Verified in Production |
+| **Phase 1** | Camera Sync (Socket.IO) | Implemented (`agent:cameras:sync`) | Implemented (`camera_sync.py`) | Verified in Production |
+| **Phase 1** | Remote Start/Stop | Implemented (`toOwnerAgents`) | Implemented (`camera_sync.py`) | Verified in Production |
+| **Phase 2** | Real-time Alert Relay | Implemented (`AgentAlertStore`) | Implemented (`alert_forwarder.py`) | Verified |
+| **Phase 2** | Offline SQLite Queue | Server ingest ready | Implemented (`offline_queue.py`) | Verified (Store & Forward) |
+| **Phase 3** | WebRTC Offer/Answer | Implemented (`webrtc:offer/answer`) | Implemented (`webrtc_relay.py`) | Verified with Auto-start |
+| **Phase 3** | Cloudflare TURN / STUN | Configured on server | Implemented with auto-negotiation | Verified |
+| **Phase 4** | Watchlist Catalog Sync | Implemented (`watchlists:sync`) | Implemented (`watchlist_sync.py`) | Verified |
+| **Phase 4** | Offline Vector Index | Specter Qdrant active | Local detector active | Verified Autonomous |
 
 ---
 
@@ -260,13 +262,41 @@ uv run --project agent python agent/agent.py --config agent/config.json status
 ```
 
 ### 4. Connect to Cloud via Socket.IO
-
+ 
+There are two ways to run the edge agent:
+ 
+#### Option A: Native Specter Agent (Recommended for Production)
+ 
+Run directly with the `specter` CLI using environment variables or `.env`:
+ 
+```bash
+SPECTER_AGENT__BACKEND_URL=https://api.eyec.live \
+SPECTER_AGENT__AGENT_TOKEN=$(cat deploy/secrets/agent.token) \
+SPECTER_AGENT__MODE=cloud \
+uv run --env-file .env specter --config config/specter.dev.yaml agent
+```
+ 
+Or run the full Docker Compose stack with the agent container:
+ 
+```bash
+docker compose --env-file .env \
+  -f deploy/compose.infra.yaml \
+  -f deploy/compose.specter.yaml \
+  -f deploy/compose.agent.yaml up -d
+```
+ 
+The native agent automatically connects to local NATS, pushes local cameras, reconciles watchlists,
+enqueues alerts in `agent_offline_queue.sqlite3` during disconnections, and handles WebRTC live video relay.
+ 
+#### Option B: Standalone Script (`agent/agent.py`)
+ 
 ```bash
 uv run --project agent --with 'python-socketio[client]' python agent/agent.py \
   --config agent/config.json \
   --heartbeat-interval 30 \
   socket-connect
 ```
+ 
 Once connected, the agent will:
 1. Authenticate with the Cloud Socket.IO `/agent` namespace.
 2. Push local camera details to `AgentCameraStore`.

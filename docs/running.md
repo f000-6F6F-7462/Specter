@@ -48,6 +48,12 @@ uv run --env-file .env specter --config config/specter.dev.yaml migrate
 uv run --env-file .env specter --config config/specter.dev.yaml api   # then camera-manager, detector
 ```
 
+To run the engine as a connected edge agent to a local or cloud backend:
+
+```bash
+uv run --env-file .env specter --config config/specter.dev.yaml agent
+```
+
 The token is then `.dev/secrets/api.token` and the data is in `.dev/`; the server finds that token
 by itself. Nothing restarts a process that crashes this way. Do not run this and
 `make engine-up` together: they use the same ports.

@@ -43,6 +43,7 @@ engine, the server or the client on their own, from source, see [Running](docs/r
 | **Integrate an application with Specter** (start here if you write the app side) | [App integration guide](docs/integration/app-integration-guide.md) |
 | Run the engine, the server or the client on their own | [Running](docs/running.md) |
 | Understand how the parts fit together | [Architecture](docs/architecture.md) (diagrams) |
+| Deploy as an Edge Agent / Hybrid VMS | [Edge agent architecture](docs/plans/edge-agent-architecture.md) |
 | Look up an HTTP endpoint | [HTTP API reference](docs/integration/http-api.md) |
 | Look up a NATS subject or message | [NATS events reference](docs/integration/nats-events.md) |
 | Show live video | [Live video](docs/integration/live-video.md) |
@@ -60,7 +61,8 @@ flowchart LR
 ```
 
 Specter's HTTP API and NATS listen on `127.0.0.1` only, so the application server runs on the
-same device.
+same device. Alternatively, Specter can run as an autonomous **Edge Agent** connecting outward
+to a remote cloud backend (see [Edge agent architecture](docs/plans/edge-agent-architecture.md)).
 The full picture, with every process and flow, is in [Architecture](docs/architecture.md).
 
 ## Processes
@@ -71,6 +73,7 @@ The full picture, with every process and flow, is in [Architecture](docs/archite
 | `camera-manager` | `specter camera-manager` | Runs one process per camera, records alerts |
 | `camera` | `specter camera --camera-id <id>` | Analyzes one camera (started by the camera manager) |
 | `detector` | `specter detector` | Serves the models to all cameras and enrolls reference photos |
+| `agent` | `specter agent` | Connects to cloud backend as an edge agent (camera & watchlist sync, offline queue, WebRTC relay) |
 
 `specter migrate` applies database migrations. Every setting comes from the root `.env`; see
 [`.env.example`](.env.example).
@@ -80,14 +83,15 @@ The full picture, with every process and flow, is in [Architecture](docs/archite
 | Path | Contents |
 |---|---|
 | `src/specter/api` | HTTP API (FastAPI) |
-| `src/specter/camera`, `camera_manager`, `detector` | The three kinds of long-running processes |
+| `src/specter/agent` | Edge agent gateway (cloud connection, camera & watchlist sync, offline queue, WebRTC relay) |
+| `src/specter/camera`, `camera_manager`, `detector` | The three kinds of long-running vision processes |
 | `src/specter/vision` | Sampling, tracking, rules, identity matching |
 | `src/specter/inference` | Model runtimes (ONNX Runtime, NCNN) and the models themselves |
 | `src/specter/messaging` | NATS subjects, streams and message contracts |
 | `src/specter/storage`, `entities` | Database and vector index, and the domain model |
 | `src/specter/frame_transport` | How camera processes hand frames to the detector |
 | `contracts/jsonschema` | JSON Schema of every published message (`make contracts`) |
-| `deploy/` | Dockerfiles (`specter`, `dashboard`), Docker Compose (Specter, NATS, Qdrant, go2rtc, dashboard), and the model export |
+| `deploy/` | Dockerfiles (`specter`, `dashboard`), Docker Compose (Specter, NATS, Qdrant, go2rtc, dashboard, edge agent), and the model export |
 | `config/` | `specter.dev.yaml`: service addresses and paths for the engine run from source |
 | `scripts/` | `prepare-environment.sh`: what `make up` checks and creates before starting |
 | `tests/` | `unit`, `integration` (real services), `models` (real models) |

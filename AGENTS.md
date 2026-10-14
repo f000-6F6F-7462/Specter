@@ -21,7 +21,8 @@ JetStream publishes events. The application server owns users and access control
 
 | Path | Responsibility |
 |---|---|
-| `src/specter/command_line.py` | `specter` CLI: `api`, `camera-manager`, `camera --camera-id`, `detector`, `migrate` |
+| `src/specter/command_line.py` | `specter` CLI: `api`, `camera-manager`, `camera --camera-id`, `detector`, `agent`, `migrate` |
+| `src/specter/agent/` | Edge agent gateway: cloud Socket.IO connection, camera & watchlist sync, offline queue, alert store-and-forward, and WebRTC relay |
 | `src/specter/api/` | FastAPI app, routers, schemas, authentication, ownership and notifications |
 | `src/specter/camera/` | Camera stream reading, scene analysis, identification and alert publishing |
 | `src/specter/camera_manager/` | Camera supervision, go2rtc registration, alert recording and evidence retention |
@@ -39,7 +40,8 @@ JetStream publishes events. The application server owns users and access control
 
 Runtime services are NATS, Qdrant and go2rtc (`deploy/compose.infra.yaml`). Specter processes are
 `migrate`, `api`, `camera-manager` and `detector` (`deploy/compose.specter.yaml`); the manager starts
-one camera process per active camera. `deploy/compose.dashboard.yaml` adds the dashboard.
+one camera process per active camera. `deploy/compose.dashboard.yaml` adds the dashboard, and
+`deploy/compose.agent.yaml` adds the edge agent process.
 
 ## Change map
 
