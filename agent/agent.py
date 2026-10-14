@@ -211,7 +211,9 @@ class SpecterAgent:
         payload = {
             "name": self.config.agent_name,
             "version": "0.2.0",
-            "cameras": [{"name": camera.name, "status": "unknown"} for camera in self.config.cameras],
+            "cameras": [
+                {"name": camera.name, "status": "unknown"} for camera in self.config.cameras
+            ],
         }
         response = self.request("POST", "/api/agent/heartbeat", json=payload)
         if not isinstance(response, dict) or response.get("success") is not True:
@@ -312,7 +314,10 @@ class SpecterAgent:
                         )
                         print(f"Cloud camera created locally: {name}")
                     except AgentError as error:
-                        print(f"specter-agent: failed to create cloud camera: {error}", file=sys.stderr)
+                        print(
+                            f"specter-agent: failed to create cloud camera: {error}",
+                            file=sys.stderr,
+                        )
             elif kind == "updated" and isinstance(camera, dict) and camera_id:
                 try:
                     self.request(
@@ -414,7 +419,9 @@ class SpecterAgent:
                 "credentials": raw_camera.get("credentials"),
                 "detection_classes": raw_camera.get("detection_classes", []),
             }
-            existing = next((camera for camera in local_cameras if camera.get("name") == name), None)
+            existing = next(
+                (camera for camera in local_cameras if camera.get("name") == name), None
+            )
             try:
                 if existing is None:
                     self.request(
@@ -429,7 +436,10 @@ class SpecterAgent:
                         json={key: value for key, value in body.items() if key != "name"},
                     )
             except AgentError as error:
-                print(f"specter-agent: warning: skipping cloud camera {name!r}: {error}", file=sys.stderr)
+                print(
+                    f"specter-agent: warning: skipping cloud camera {name!r}: {error}",
+                    file=sys.stderr,
+                )
 
 
 def parse_args() -> argparse.Namespace:
