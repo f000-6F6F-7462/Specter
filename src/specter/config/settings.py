@@ -168,6 +168,7 @@ class AgentSettings(_StrictModel):
     agent_token: str = ""
     agent_name: str = "Specter Edge Agent"
     owner_id: str = "facealert"
+    local_owner_id: str = "facealert"
     specter_api_url: str = "http://127.0.0.1:8000"
     specter_api_token: str = ""
     heartbeat_interval_seconds: float = Field(default=30.0, gt=0)

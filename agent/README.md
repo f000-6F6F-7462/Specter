@@ -77,7 +77,6 @@ Set `SPECTER_AGENT_CLOUD_URL` to use a different Dashboard URL. The default is
 The default heartbeat interval is 30 seconds. Set `SPECTER_AGENT_HEARTBEAT_INTERVAL`
 or pass `--heartbeat-interval` to change it. The Agent retries failed connections with
 exponential backoff and stops with `Ctrl+C`.
-
 ## Running the Native Integrated Specter Agent
 
 For full production features (automated NATS alert ingestion, persistent SQLite queue, WebRTC relay with STUN/TURN, and watchlist sync), run the integrated `specter agent`:
@@ -97,4 +96,3 @@ docker compose --env-file .env \
   -f deploy/compose.specter.yaml \
   -f deploy/compose.agent.yaml up -d
 ```
-

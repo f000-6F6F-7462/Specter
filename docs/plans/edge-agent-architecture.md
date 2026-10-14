@@ -262,7 +262,6 @@ uv run --project agent python agent/agent.py --config agent/config.json status
 ```
 
 ### 4. Connect to Cloud via Socket.IO
- 
 There are two ways to run the edge agent:
  
 #### Option A: Native Specter Agent (Recommended for Production)
@@ -296,7 +295,6 @@ uv run --project agent --with 'python-socketio[client]' python agent/agent.py \
   --heartbeat-interval 30 \
   socket-connect
 ```
- 
 Once connected, the agent will:
 1. Authenticate with the Cloud Socket.IO `/agent` namespace.
 2. Push local camera details to `AgentCameraStore`.
