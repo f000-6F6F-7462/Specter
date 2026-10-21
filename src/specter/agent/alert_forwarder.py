@@ -263,11 +263,15 @@ class AlertForwarder:
                 )
 
             if packets and self._connector.sio.connected:
-                await self._connector.sio.emit(
-                    "agent:alerts:sync",
-                    {"alerts": packets},
-                    namespace="/agent",
-                )
+                # Emit in batches of 3 to avoid websocket payload size limits
+                batch_size = 3
+                for i in range(0, len(packets), batch_size):
+                    batch = packets[i : i + batch_size]
+                    await self._connector.sio.emit(
+                        "agent:alerts:sync",
+                        {"alerts": batch},
+                        namespace="/agent",
+                    )
                 logger.info("Backfilled %d historical alerts to cloud", len(packets))
                 return len(packets)
             return 0
