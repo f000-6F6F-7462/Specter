@@ -1,5 +1,7 @@
 # Specter architecture
 
+For a single deployment-topology diagram, see [Architecture overview](architecture-overview.md).
+
 Specter is the vision engine of the system. It reads camera streams, detects and identifies people
 and objects, and turns what it sees into **alerts**. It has no user interface and no user accounts:
 an **application server** sits in front of it, owns the users, and talks to Specter in exactly two

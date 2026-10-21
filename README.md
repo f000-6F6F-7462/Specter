@@ -42,7 +42,7 @@ engine, the server or the client on their own, from source, see [Running](docs/r
 |---|---|
 | **Integrate an application with Specter** (start here if you write the app side) | [App integration guide](docs/integration/app-integration-guide.md) |
 | Run the engine, the server or the client on their own | [Running](docs/running.md) |
-| Understand how the parts fit together | [Architecture](docs/architecture.md) (diagrams) |
+| Understand how the parts fit together | [Architecture](docs/architecture.md) and [architecture overview](docs/architecture-overview.md) |
 | Deploy as an Edge Agent / Hybrid VMS | [Edge agent architecture](docs/plans/edge-agent-architecture.md) |
 | Look up an HTTP endpoint | [HTTP API reference](docs/integration/http-api.md) |
 | Look up a NATS subject or message | [NATS events reference](docs/integration/nats-events.md) |
