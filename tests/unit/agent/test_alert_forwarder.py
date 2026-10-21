@@ -143,3 +143,28 @@ async def test_alert_forwarder_backfill_recent_alerts(tmp_path: Path) -> None:
     assert len(args[1]["alerts"]) == 2
     assert args[1]["alerts"][0]["alert_id"] == "alert-hist-1"
     assert kwargs["namespace"] == "/agent"
+
+
+@pytest.mark.asyncio
+async def test_alert_forwarder_fetch_alert_snapshot() -> None:
+    mock_resp = MagicMock(status_code=200, content=b"fake-jpeg-bytes")
+    mock_resp.headers = {"content-type": "image/jpeg"}
+
+    http_client = AsyncMock(spec=httpx.AsyncClient)
+    http_client.get.return_value = mock_resp
+
+    forwarder = AlertForwarder(
+        owner_id="test-owner",
+        message_bus=MagicMock(),
+        cloud_connector=MagicMock(),
+        offline_queue=MagicMock(),
+        specter_api_url="http://127.0.0.1:8000",
+        api_token="test-token",
+        http_client=http_client,
+    )
+
+    result = await forwarder.fetch_alert_snapshot("alert-123")
+    assert result is not None
+    content_type, data = result
+    assert content_type == "image/jpeg"
+    assert data == b"fake-jpeg-bytes"

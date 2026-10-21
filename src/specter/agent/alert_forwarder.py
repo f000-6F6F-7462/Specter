@@ -185,6 +185,37 @@ class AlertForwarder:
             if self._connector.is_connected:
                 await self.drain_queue()
 
+    async def fetch_alert_snapshot(self, alert_id: str) -> tuple[str, bytes] | None:
+        """Fetches an alert snapshot JPEG from local filesystem or Specter API."""
+        if self._evidence_root is not None:
+            snapshot_path = self._evidence_root / f"evidence/{alert_id}.jpg"
+            if snapshot_path.is_file():
+                try:
+                    return "image/jpeg", snapshot_path.read_bytes()
+                except OSError:
+                    pass
+
+        if self._specter_api_url:
+            url = f"{self._specter_api_url}/owners/{self._owner_id}/alerts/{alert_id}/snapshot"
+            headers: dict[str, str] = {}
+            if self._api_token:
+                headers["Authorization"] = f"Bearer {self._api_token}"
+            client = self._http_client or httpx.AsyncClient(timeout=10.0)
+            should_close = self._http_client is None
+            try:
+                response = await client.get(url, headers=headers)
+                if response.status_code == httpx.codes.OK:
+                    content_type = response.headers.get("content-type", "image/jpeg")
+                    return content_type, response.content
+            except Exception as error:
+                logger.warning(
+                    "Failed to fetch alert snapshot %s from local API: %s", alert_id, error
+                )
+            finally:
+                if should_close:
+                    await client.aclose()
+        return None
+
     async def backfill_recent_alerts(self, limit: int = 100) -> int:
         """Fetches recent historical alerts from local Specter engine and syncs them to the cloud.
 
@@ -218,8 +249,10 @@ class AlertForwarder:
                 snapshot_b64 = None
                 if alert.get("has_snapshot"):
                     alert_id = alert.get("id")
-                    snapshot_path = f"evidence/{alert_id}.jpg"
-                    snapshot_b64 = self._read_snapshot_base64(snapshot_path)
+                    if alert_id:
+                        snap_data = await self.fetch_alert_snapshot(alert_id)
+                        if snap_data:
+                            snapshot_b64 = base64.b64encode(snap_data[1]).decode("ascii")
                 packets.append(
                     {
                         "alert_id": alert.get("id"),

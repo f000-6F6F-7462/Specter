@@ -1,6 +1,7 @@
 """Edge agent entrypoint: coordinates cloud connector and camera synchronizer."""
 
 import asyncio
+import base64
 import json
 import logging
 from pathlib import Path
@@ -112,6 +113,35 @@ def _setup_watchlist_sync(
             logger.info("Received agent:watchlist:delete from cloud: %s", wl_id)
             await watchlist_reconciler.delete_local_watchlist(wl_id)
 
+    async def on_target_image_request(data: dict[str, Any]) -> None:
+        request_id = data.get("request_id")
+        watchlist_id = data.get("watchlist_id")
+        target_id = data.get("target_id")
+        image_id = data.get("image_id")
+        if not request_id or not watchlist_id or not target_id or not image_id:
+            return
+        result = await watchlist_reconciler.fetch_target_image(watchlist_id, target_id, image_id)
+        if result:
+            content_type, img_bytes = result
+            await connector.sio.emit(
+                "agent:target_image:response",
+                {
+                    "request_id": request_id,
+                    "watchlist_id": watchlist_id,
+                    "target_id": target_id,
+                    "image_id": image_id,
+                    "content_type": content_type,
+                    "image_base64": base64.b64encode(img_bytes).decode("ascii"),
+                },
+                namespace="/agent",
+            )
+        else:
+            await connector.sio.emit(
+                "agent:target_image:response",
+                {"request_id": request_id, "error": "Image not found"},
+                namespace="/agent",
+            )
+
     connector.sio.on("watchlists:sync", on_watchlists_sync, namespace="/agent")
     connector.sio.on(
         "agent:watchlists:request_sync", on_watchlists_request_sync, namespace="/agent"
@@ -119,6 +149,7 @@ def _setup_watchlist_sync(
     connector.sio.on("agent:watchlist:create", on_watchlist_create, namespace="/agent")
     connector.sio.on("agent:watchlist:update", on_watchlist_update, namespace="/agent")
     connector.sio.on("agent:watchlist:delete", on_watchlist_delete, namespace="/agent")
+    connector.sio.on("agent:target_image:request", on_target_image_request, namespace="/agent")
     return watchlist_reconciler
 
 
@@ -213,6 +244,44 @@ async def _run_periodic_camera_sync(
             logger.warning("Periodic camera sync error: %s", err)
 
 
+def _setup_alert_forwarder_events(
+    connector: CloudConnector, alert_forwarder: AlertForwarder
+) -> None:
+    """Registers alert sync and on-demand snapshot request handlers."""
+
+    async def on_alerts_request_sync() -> None:
+        logger.info("Received agent:alerts:request_sync from cloud")
+        await alert_forwarder.backfill_recent_alerts(limit=100)
+
+    async def on_alert_snapshot_request(data: dict[str, Any]) -> None:
+        request_id = data.get("request_id")
+        alert_id = data.get("alert_id")
+        if not request_id or not alert_id:
+            return
+        result = await alert_forwarder.fetch_alert_snapshot(alert_id)
+        if result:
+            content_type, snap_bytes = result
+            await connector.sio.emit(
+                "agent:alert_snapshot:response",
+                {
+                    "request_id": request_id,
+                    "alert_id": alert_id,
+                    "content_type": content_type,
+                    "snapshot_base64": base64.b64encode(snap_bytes).decode("ascii"),
+                },
+                namespace="/agent",
+            )
+        else:
+            await connector.sio.emit(
+                "agent:alert_snapshot:response",
+                {"request_id": request_id, "alert_id": alert_id, "error": "Snapshot not found"},
+                namespace="/agent",
+            )
+
+    connector.sio.on("agent:alerts:request_sync", on_alerts_request_sync, namespace="/agent")
+    connector.sio.on("agent:alert_snapshot:request", on_alert_snapshot_request, namespace="/agent")
+
+
 async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     """Runs the Specter edge agent process until shutdown is requested."""
     logger.info(
@@ -260,12 +329,7 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         api_token=api_token,
     )
     alert_forwarder_holder.append(alert_forwarder)
-
-    async def on_alerts_request_sync() -> None:
-        logger.info("Received agent:alerts:request_sync from cloud")
-        await alert_forwarder.backfill_recent_alerts(limit=100)
-
-    connector.sio.on("agent:alerts:request_sync", on_alerts_request_sync, namespace="/agent")
+    _setup_alert_forwarder_events(connector, alert_forwarder)
 
     webrtc_relay = WebRtcRelay(
         cloud_connector=connector,

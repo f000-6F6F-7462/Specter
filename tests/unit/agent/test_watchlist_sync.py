@@ -158,3 +158,25 @@ async def test_update_and_delete_local_watchlist() -> None:
 
     deleted = await reconciler.delete_local_watchlist("wl-1")
     assert deleted is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_target_image() -> None:
+    img_resp = MagicMock(status_code=200, content=b"fake-image-bytes")
+    img_resp.headers = {"content-type": "image/jpeg"}
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+    client.get.return_value = img_resp
+
+    reconciler = WatchlistSyncReconciler(
+        specter_api_url="http://127.0.0.1:8000",
+        owner_id="test-owner",
+        api_token="test-token",
+        http_client=client,
+    )
+
+    result = await reconciler.fetch_target_image("wl-1", "target-1", "img-1")
+    assert result is not None
+    content_type, data = result
+    assert content_type == "image/jpeg"
+    assert data == b"fake-image-bytes"

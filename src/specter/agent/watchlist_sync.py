@@ -171,6 +171,38 @@ class WatchlistSyncReconciler:
             if should_close:
                 await client.aclose()
 
+    async def fetch_target_image(
+        self, watchlist_id: str, target_id: str, image_id: str
+    ) -> tuple[str, bytes] | None:
+        """Fetches a target reference image from the local Specter engine."""
+        url = (
+            f"{self._specter_api_url}/owners/{self._owner_id}"
+            f"/watchlists/{watchlist_id}/targets/{target_id}/images/{image_id}"
+        )
+        headers: dict[str, str] = {}
+        if self._api_token:
+            headers["Authorization"] = f"Bearer {self._api_token}"
+        client = await self._get_client()
+        should_close = self._http_client is None
+        try:
+            response = await client.get(url, headers=headers)
+            if response.status_code == httpx.codes.OK:
+                content_type = response.headers.get("content-type", "image/jpeg")
+                return content_type, response.content
+            return None
+        except httpx.HTTPError as error:
+            logger.warning(
+                "Failed to fetch target image %s/%s/%s: %s",
+                watchlist_id,
+                target_id,
+                image_id,
+                error,
+            )
+            return None
+        finally:
+            if should_close:
+                await client.aclose()
+
     async def reconcile_watchlists(self, cloud_watchlists: list[dict[str, Any]]) -> dict[str, int]:
         """Reconciles local watchlists against the cloud watchlists.
 
