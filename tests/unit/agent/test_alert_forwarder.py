@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from specter.agent.alert_forwarder import AlertForwarder
@@ -94,3 +95,51 @@ async def test_alert_forwarder_drains_queue_on_reconnect(tmp_path: Path) -> None
     assert drained_count == 2
     assert queue.count() == 0
     assert mock_sio.emit.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_alert_forwarder_backfill_recent_alerts(tmp_path: Path) -> None:
+    queue = OfflineQueue(tmp_path / "queue.sqlite3")
+
+    mock_sio = MagicMock()
+    mock_sio.connected = True
+    mock_sio.emit = AsyncMock()
+
+    mock_connector = MagicMock()
+    mock_connector.is_connected = True
+    mock_connector.sio = mock_sio
+
+    mock_resp = MagicMock(status_code=200)
+    mock_resp.json.return_value = {
+        "alerts": [
+            {"id": "alert-hist-1", "kind": "rule", "camera_id": "cam-1", "has_snapshot": False},
+            {
+                "id": "alert-hist-2",
+                "kind": "identity_match",
+                "camera_id": "cam-1",
+                "has_snapshot": False,
+            },
+        ]
+    }
+
+    http_client = AsyncMock(spec=httpx.AsyncClient)
+    http_client.get.return_value = mock_resp
+
+    forwarder = AlertForwarder(
+        owner_id="test-owner",
+        message_bus=MagicMock(),
+        cloud_connector=mock_connector,
+        offline_queue=queue,
+        specter_api_url="http://127.0.0.1:8000",
+        api_token="test-token",
+        http_client=http_client,
+    )
+
+    count = await forwarder.backfill_recent_alerts(limit=50)
+    assert count == 2
+    mock_sio.emit.assert_awaited_once()
+    args, kwargs = mock_sio.emit.call_args
+    assert args[0] == "agent:alerts:sync"
+    assert len(args[1]["alerts"]) == 2
+    assert args[1]["alerts"][0]["alert_id"] == "alert-hist-1"
+    assert kwargs["namespace"] == "/agent"

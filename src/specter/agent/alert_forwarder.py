@@ -7,6 +7,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from specter.agent.cloud_connector import CloudConnector
 from specter.agent.offline_queue import OfflineQueue
 from specter.messaging.message_bus import MessageBus
@@ -25,6 +27,9 @@ class AlertForwarder:
         cloud_connector: CloudConnector,
         offline_queue: OfflineQueue,
         evidence_root: Path | None = None,
+        specter_api_url: str = "",
+        api_token: str = "",
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         """Initializes the alert forwarder with messaging, connector and offline queue."""
         self._owner_id = owner_id
@@ -32,6 +37,9 @@ class AlertForwarder:
         self._connector = cloud_connector
         self._offline_queue = offline_queue
         self._evidence_root = evidence_root
+        self._specter_api_url = specter_api_url.rstrip("/")
+        self._api_token = api_token
+        self._http_client = http_client
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
     def _read_snapshot_base64(self, snapshot_path: str | None) -> str | None:
@@ -176,3 +184,63 @@ class AlertForwarder:
                 break
             if self._connector.is_connected:
                 await self.drain_queue()
+
+    async def backfill_recent_alerts(self, limit: int = 100) -> int:
+        """Fetches recent historical alerts from local Specter engine and syncs them to the cloud.
+
+        Args:
+            limit: Maximum number of recent alerts to retrieve.
+
+        Returns:
+            Number of alerts pushed to cloud.
+        """
+        if not self._specter_api_url or not self._connector.is_connected:
+            return 0
+
+        url = f"{self._specter_api_url}/owners/{self._owner_id}/alerts"
+        headers = {"Content-Type": "application/json"}
+        if self._api_token:
+            headers["Authorization"] = f"Bearer {self._api_token}"
+
+        should_close = self._http_client is None
+        client = self._http_client or httpx.AsyncClient(timeout=15.0)
+        try:
+            response = await client.get(url, params={"limit": limit}, headers=headers)
+            if response.status_code != httpx.codes.OK:
+                logger.warning(
+                    "Could not fetch local alerts for backfill: status %d", response.status_code
+                )
+                return 0
+            data = response.json()
+            alerts = data.get("alerts", [])
+            packets = []
+            for alert in alerts:
+                snapshot_b64 = None
+                if alert.get("has_snapshot"):
+                    alert_id = alert.get("id")
+                    snapshot_path = f"evidence/{alert_id}.jpg"
+                    snapshot_b64 = self._read_snapshot_base64(snapshot_path)
+                packets.append(
+                    {
+                        "alert_id": alert.get("id"),
+                        "kind": alert.get("kind"),
+                        "payload": alert,
+                        "snapshot_base64": snapshot_b64,
+                    }
+                )
+
+            if packets and self._connector.sio.connected:
+                await self._connector.sio.emit(
+                    "agent:alerts:sync",
+                    {"alerts": packets},
+                    namespace="/agent",
+                )
+                logger.info("Backfilled %d historical alerts to cloud", len(packets))
+                return len(packets)
+            return 0
+        except Exception as error:
+            logger.warning("Failed to backfill historical alerts to cloud: %s", error)
+            return 0
+        finally:
+            if should_close:
+                await client.aclose()

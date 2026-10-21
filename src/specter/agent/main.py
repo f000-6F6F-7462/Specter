@@ -75,7 +75,7 @@ async def _connect_message_bus(nats_url: str) -> MessageBus:
 def _setup_watchlist_sync(
     connector: CloudConnector, settings: Settings, api_token: str
 ) -> WatchlistSyncReconciler:
-    """Configures watchlist synchronizer and registers its Socket.IO event handler."""
+    """Configures watchlist synchronizer and registers its Socket.IO event handlers."""
     watchlist_reconciler = WatchlistSyncReconciler(
         specter_api_url=settings.agent.specter_api_url,
         owner_id=settings.agent.owner_id,
@@ -89,13 +89,44 @@ def _setup_watchlist_sync(
         logger.info("Reconciling %d watchlists with local Specter engine", len(watchlists))
         await watchlist_reconciler.reconcile_watchlists(watchlists)
 
+    async def on_watchlists_request_sync() -> None:
+        logger.info("Received agent:watchlists:request_sync from cloud")
+        await watchlist_reconciler.push_local_watchlists(connector)
+
+    async def on_watchlist_create(data: dict[str, Any]) -> None:
+        wl = data.get("watchlist", {})
+        if wl:
+            logger.info("Received agent:watchlist:create from cloud: %s", wl.get("name"))
+            await watchlist_reconciler.create_local_watchlist(wl)
+
+    async def on_watchlist_update(data: dict[str, Any]) -> None:
+        wl_id = data.get("watchlistId", "")
+        changes = data.get("changes", {})
+        if wl_id and changes:
+            logger.info("Received agent:watchlist:update from cloud: %s", wl_id)
+            await watchlist_reconciler.update_local_watchlist(wl_id, changes)
+
+    async def on_watchlist_delete(data: dict[str, Any]) -> None:
+        wl_id = data.get("watchlistId", "")
+        if wl_id:
+            logger.info("Received agent:watchlist:delete from cloud: %s", wl_id)
+            await watchlist_reconciler.delete_local_watchlist(wl_id)
+
     connector.sio.on("watchlists:sync", on_watchlists_sync, namespace="/agent")
+    connector.sio.on(
+        "agent:watchlists:request_sync", on_watchlists_request_sync, namespace="/agent"
+    )
+    connector.sio.on("agent:watchlist:create", on_watchlist_create, namespace="/agent")
+    connector.sio.on("agent:watchlist:update", on_watchlist_update, namespace="/agent")
+    connector.sio.on("agent:watchlist:delete", on_watchlist_delete, namespace="/agent")
     return watchlist_reconciler
 
 
 def _build_cloud_connector(
     settings: Settings,
     reconciler: CameraSyncReconciler,
+    watchlist_reconciler_holder: list[WatchlistSyncReconciler],
+    alert_forwarder_holder: list[AlertForwarder],
 ) -> CloudConnector:
     """Builds CloudConnector instance with registered event hooks."""
     connector_holder: list[CloudConnector] = []
@@ -113,13 +144,17 @@ def _build_cloud_connector(
             await connector_holder[0].request_camera_sync()
 
     async def on_connected() -> None:
-        logger.info("Connected to cloud backend; pushing local cameras catalog")
+        logger.info("Connected to cloud backend; pushing local catalog and backfilling alerts")
         if connector_holder:
             try:
                 await reconciler.push_local_cameras(connector_holder[0])
+                if watchlist_reconciler_holder:
+                    await watchlist_reconciler_holder[0].push_local_watchlists(connector_holder[0])
+                if alert_forwarder_holder:
+                    await alert_forwarder_holder[0].backfill_recent_alerts(limit=100)
                 await connector_holder[0].request_camera_sync()
             except Exception as error:
-                logger.warning("Failed to push camera sync on connect: %s", error)
+                logger.warning("Failed to push catalog or alerts on connect: %s", error)
 
     async def on_camera_start(camera_id: str) -> None:
         try:
@@ -204,7 +239,15 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
     offline_queue = OfflineQueue(queue_db_path)
     message_bus = await _connect_message_bus(settings.services.nats_url)
 
-    connector = _build_cloud_connector(settings, reconciler)
+    watchlist_reconciler_holder: list[WatchlistSyncReconciler] = []
+    alert_forwarder_holder: list[AlertForwarder] = []
+
+    connector = _build_cloud_connector(
+        settings,
+        reconciler,
+        watchlist_reconciler_holder,
+        alert_forwarder_holder,
+    )
     await _subscribe_camera_status_forwarder(message_bus, connector)
 
     alert_forwarder = AlertForwarder(
@@ -213,7 +256,16 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         cloud_connector=connector,
         offline_queue=offline_queue,
         evidence_root=settings.paths.data_directory,
+        specter_api_url=settings.agent.specter_api_url,
+        api_token=api_token,
     )
+    alert_forwarder_holder.append(alert_forwarder)
+
+    async def on_alerts_request_sync() -> None:
+        logger.info("Received agent:alerts:request_sync from cloud")
+        await alert_forwarder.backfill_recent_alerts(limit=100)
+
+    connector.sio.on("agent:alerts:request_sync", on_alerts_request_sync, namespace="/agent")
 
     webrtc_relay = WebRtcRelay(
         cloud_connector=connector,
@@ -222,7 +274,8 @@ async def run(settings: Settings, shutdown_requested: asyncio.Event) -> None:
         api_token=api_token,
     )
     webrtc_relay.register_handlers()
-    _setup_watchlist_sync(connector, settings, api_token)
+    watchlist_reconciler = _setup_watchlist_sync(connector, settings, api_token)
+    watchlist_reconciler_holder.append(watchlist_reconciler)
 
     await connector.connect()
 
