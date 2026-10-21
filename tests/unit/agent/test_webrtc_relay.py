@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from specter.agent.webrtc_relay import WebRtcRelay
+from specter.agent.camera_autostart import CameraAutoStarter
+from specter.agent.webrtc_relay import WebRtcRelay, build_webrtc_error_payload
 from specter.config.settings import AgentSettings
 
 
@@ -87,7 +88,66 @@ async def test_webrtc_relay_handles_upstream_failure_gracefully() -> None:
     )
 
     assert answer is None
-    connector.sio.emit.assert_not_called()
+    connector.sio.emit.assert_awaited_once_with(
+        "webrtc:error",
+        {
+            "cameraId": "cam-offline",
+            "correlationId": "corr-999",
+            "clientSocketId": "client-sock-999",
+            "error": "Failed to negotiate camera stream: Connection refused",
+            "retryable": True,
+        },
+        namespace="/agent",
+    )
+
+
+@pytest.mark.asyncio
+async def test_webrtc_relay_auto_starts_camera_with_lock_and_polling() -> None:
+    connector = MagicMock()
+    connector.is_connected = True
+    connector.sio.connected = True
+    connector.sio.emit = AsyncMock()
+
+    resp_conflict = MagicMock(status_code=409)
+    resp_conflict.raise_for_status = MagicMock()
+
+    resp_ok = MagicMock(status_code=200, text="v=0\r\ns=Live\r\n")
+    resp_ok.raise_for_status = MagicMock()
+
+    http_client = AsyncMock(spec=httpx.AsyncClient)
+    # First call: 409 conflict, within lock check: 409 conflict, start called, poll 1: 200 ok
+    http_client.post.side_effect = [
+        resp_conflict,
+        resp_conflict,
+        MagicMock(status_code=200),
+        resp_ok,
+    ]
+
+    relay = WebRtcRelay(
+        cloud_connector=connector,
+        specter_api_url="http://127.0.0.1:8000",
+        owner_id="test-owner",
+        http_client=http_client,
+    )
+
+    answer = await relay.handle_offer(
+        camera_id="cam-stopped",
+        sdp_offer="v=0\r\no=browser ...",
+        correlation_id="corr-auto",
+        client_socket_id="client-sock-auto",
+    )
+
+    assert answer == "v=0\r\ns=Live\r\n"
+    connector.sio.emit.assert_awaited_once_with(
+        "webrtc:answer",
+        {
+            "cameraId": "cam-stopped",
+            "sdp": "v=0\r\ns=Live\r\n",
+            "correlationId": "corr-auto",
+            "clientSocketId": "client-sock-auto",
+        },
+        namespace="/agent",
+    )
 
 
 def test_agent_settings_effective_ice_servers_cloudflare() -> None:
@@ -108,3 +168,44 @@ def test_agent_settings_effective_ice_servers_cloudflare() -> None:
     assert cf_servers[1]["username"] == "cf-turn-user"
     assert cf_servers[1]["credential"] == "cf-turn-pass"
     assert any("turn:turn.cloudflare.com" in url for url in cf_servers[1]["urls"])
+
+
+def test_build_webrtc_error_payload() -> None:
+    payload = build_webrtc_error_payload(
+        camera_id="cam-1",
+        correlation_id="corr-1",
+        client_socket_id="sock-1",
+        error=RuntimeError("something went wrong"),
+        retryable=True,
+    )
+    assert payload == {
+        "cameraId": "cam-1",
+        "correlationId": "corr-1",
+        "clientSocketId": "sock-1",
+        "error": "Failed to negotiate camera stream: something went wrong",
+        "retryable": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_camera_autostarter_direct() -> None:
+    http_client = AsyncMock(spec=httpx.AsyncClient)
+    # 1. Concurrent check succeeds immediately
+    resp_ok = MagicMock(status_code=200)
+    http_client.post.return_value = resp_ok
+
+    starter = CameraAutoStarter(
+        specter_api_url="http://127.0.0.1:8000",
+        owner_id="test-owner",
+        http_client=http_client,
+        poll_interval_s=0.01,
+        max_poll_attempts=2,
+    )
+
+    resp = await starter.ensure_camera_ready(
+        camera_id="cam-ready",
+        sdp_offer="v=0\r\n",
+        headers={"Content-Type": "application/sdp"},
+        webrtc_url="http://127.0.0.1:8000/owners/test-owner/cameras/cam-ready/live/webrtc",
+    )
+    assert resp.status_code == 200
