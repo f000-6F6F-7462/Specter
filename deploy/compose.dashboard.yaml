@@ -25,6 +25,8 @@ services:
       SPECTER_NATS_URL: nats://nats:4222
       SPECTER_API_TOKEN_FILE: /run/secrets/specter_api_token
       QDRANT_URL: http://qdrant:6333
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     secrets:
       - source: specter_api_token
         target: /run/secrets/specter_api_token
@@ -50,6 +52,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:12113}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-${GOOGLE_CLIENT_ID:-}}
     ports:
       - "${DASHBOARD_PORT:-8080}:4173"
     healthcheck:
